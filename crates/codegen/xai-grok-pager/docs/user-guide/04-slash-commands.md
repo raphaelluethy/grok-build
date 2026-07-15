@@ -212,7 +212,7 @@ Reopen the current session in the other render mode. `/minimal` (offered in
 fullscreen) switches to the experimental scrollback-native mode; `/fullscreen`
 (offered in minimal; alias `/full`) switches back to the standard alt-screen
 TUI. Both relaunch the pager on the same conversation and are **sticky**: the
-choice persists to `[ui].screen_mode` in `config.toml`, so future plain `grok`
+choice persists to `[ui].screen_mode` in `config.toml`, so future plain `grog`
 launches open in whatever mode was last used. The `--minimal` / `--fullscreen`
 CLI flags do the same thing at launch time.
 

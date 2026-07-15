@@ -71,7 +71,7 @@ fn flag_takes_value(flag: &str) -> bool {
 ///
 /// Strips prior session-selection / mode flags, one-shot session-creation
 /// directives, and any bare positional prompt so a cold-start
-/// `grok "do the thing"` does not re-submit on resume. Keeps everything else
+/// `grog "do the thing"` does not re-submit on resume. Keeps everything else
 /// (e.g. `--no-leader`, `--model`, endpoint overrides) intact, including the
 /// value token that follows value-taking flags.
 ///
@@ -175,7 +175,7 @@ pub(crate) fn build_screen_mode_relaunch_args(
             continue;
         }
 
-        // Bare positional prompt (e.g. `grok "fix the bug"`). Must not re-fire
+        // Bare positional prompt (e.g. `grog "fix the bug"`). Must not re-fire
         // on resume. Clap positionals never start with `-`. Values for earlier
         // flags were already consumed above, so any remaining bare word here is
         // the prompt.
@@ -208,8 +208,8 @@ pub(crate) fn screen_mode_env_value(want_minimal: bool) -> &'static str {
 /// Shell command a user can paste when auto re-exec fails.
 ///
 /// Includes [`GROK_SCREEN_MODE_ENV`] so the resume hits the same override path
-/// as a successful `exec` — plain `grok --resume <id>` (or even
-/// `grok --minimal --resume <id>`) is not enough after `/fullscreen` when
+/// as a successful `exec` — plain `grog --resume <id>` (or even
+/// `grog --minimal --resume <id>`) is not enough after `/fullscreen` when
 /// config/CLI would pick minimal or inline alt-screen policy. The explicit
 /// `--minimal`/`--fullscreen` flag is included too so following the hint also
 /// persists the sticky `[ui] screen_mode` preference, exactly like a
@@ -323,7 +323,7 @@ pub(crate) fn parse_screen_mode(value: Option<&str>) -> Option<super::ScreenMode
 ///
 /// Reads **and removes** the variable so the override is truly one-shot: it
 /// must not linger in this process's environment where every spawned child
-/// (tool shells, workers, nested `grok` invocations) would inherit a forced
+/// (tool shells, workers, nested `grog` invocations) would inherit a forced
 /// screen mode the user never asked for.
 ///
 /// When set, the returned mode **wins** over CLI flags (`--minimal`,
@@ -627,7 +627,7 @@ mod tests {
 
     #[test]
     fn double_dash_and_following_positionals_dropped() {
-        // `grok --no-leader -- "fix the bug"`: everything after `--` is the
+        // `grog --no-leader -- "fix the bug"`: everything after `--` is the
         // prompt. The separator itself must go too, or the appended
         // `--resume <id>` would be parsed as positional prompt words.
         let out = build_screen_mode_relaunch_args(
@@ -720,7 +720,7 @@ mod tests {
 
     #[test]
     fn resume_without_value_then_flag_is_not_eaten() {
-        // `grok --resume --no-leader` (resume most-recent; next token is a flag).
+        // `grog --resume --no-leader` (resume most-recent; next token is a flag).
         let out = build_screen_mode_relaunch_args(
             args(&["grok", "--resume", "--no-leader"]),
             "sid",

@@ -166,7 +166,7 @@ navigation, while `simple_mode` controls editing in the prompt.
 #### Screen Mode
 
 The `screen_mode` setting under `[ui]` is the **sticky render-mode
-preference**: whichever mode you last chose explicitly is what a plain `grok`
+preference**: whichever mode you last chose explicitly is what a plain `grog`
 opens with next time.
 
 | Value | Behavior |
@@ -177,7 +177,7 @@ opens with next time.
 
 You normally never edit this key by hand — Grok writes it whenever you pass an
 explicit `--minimal` / `--fullscreen` flag or run `/minimal` / `/fullscreen`.
-A plain `grok` launch only reads it. A CLI flag always wins over the config
+A plain `grog` launch only reads it. A CLI flag always wins over the config
 value for that invocation (and updates it), and `screen_mode` takes precedence
 over the legacy `[terminal] minimal` key in `pager.toml`. Delete the key to
 restore the legacy behavior.
@@ -394,7 +394,7 @@ Each cell can be toggled via environment variable or `config.toml`. See the
 environment-variables reference for the env var names. Resolution order:
 env var > config.toml > default (on).
 
-`grok inspect` reports cells that still need session-start resolution as
+`grog inspect` reports cells that still need session-start resolution as
 `?` until a value is available; cells with an explicit env or TOML value
 use that value. Affected discovery entries report
 `compatibilityStatus: "unresolved"` in JSON and `[compat unresolved]` in
@@ -459,7 +459,7 @@ items = ["action-required", "spinner", "activity", "session-name", "grok"]
 | `sleep_prevention` | bool | `true` | Keep the display awake while the agent is working (macOS/Linux). |
 | `progress_bar` | bool | `true` | Show a progress indicator in the terminal tab (OSC 9;4). |
 | `title.enabled` | bool | `true` | Set the terminal title to reflect agent state. |
-| `title.items` | array | (see above) | Items shown in the title bar. Options: `action-required`, `spinner`, `activity`, `session-name`, `cwd`, `model`, `turn-timer`, `grok`. |
+| `title.items` | array | (see above) | Items shown in the title bar. Options: `action-required`, `spinner`, `activity`, `session-name`, `cwd`, `model`, `turn-timer`, `grog`. |
 
 #### Terminal Support Matrix
 

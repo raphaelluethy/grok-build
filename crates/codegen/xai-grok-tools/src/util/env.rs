@@ -10,7 +10,7 @@ pub use xai_tty_utils::{detach_from_tty, pager_env};
 /// Env var set on agent-spawned terminal processes so host tools (e.g. `x ban`)
 /// can distinguish agent invocations from human interactive shells.
 /// Note: the CLI also uses `GROK_AGENT` as an
-/// optional agent-definition selector for launching `grok` itself; child terminal
+/// optional agent-definition selector for launching `grog` itself; child terminal
 /// processes only need the sentinel value `"1"`.
 pub const GROK_AGENT_ENV: &str = "GROK_AGENT";
 

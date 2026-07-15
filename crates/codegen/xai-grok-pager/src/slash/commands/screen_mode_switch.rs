@@ -7,7 +7,7 @@
 //! loop and re-execs the pager with `--resume <session_id>` plus an explicit
 //! `--minimal`/`--fullscreen` so the same conversation comes back under the
 //! requested render path. The relaunched process persists the flag as the
-//! sticky `[ui] screen_mode` config.toml preference, so future plain `grok`
+//! sticky `[ui] screen_mode` config.toml preference, so future plain `grog`
 //! invocations reuse the mode. See `crate::app::screen_mode_relaunch` for the
 //! re-exec side.
 

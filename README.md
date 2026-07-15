@@ -7,7 +7,7 @@
     <img alt="SpaceXAI logo" src="https://media.x.ai/v1/website/spacexai-symbol-black-transparent-6435cf42.png" width="96">
   </picture>
   <br>
-  Grok Build (<code>grok</code>)
+  Grok Build (<code>grog</code>)
 </h1>
 
 **Grok Build** is SpaceXAI's terminal-based AI coding agent. It runs as a
@@ -28,7 +28,7 @@ Protocol (ACP).
 
 **Learn more about Grok Build at [x.ai/cli](https://x.ai/cli)**
 
-This repository contains the Rust source for the `grok` CLI/TUI and its agent
+This repository contains the Rust source for the `grog` CLI/TUI and its agent
 runtime. It is synced periodically from the SpaceXAI monorepo.
 
 </div>
@@ -42,7 +42,7 @@ Prebuilt binaries are published for macOS, Linux, and Windows:
 ```sh
 curl -fsSL https://x.ai/cli/install.sh | bash   # macOS / Linux / Git Bash
 irm https://x.ai/cli/install.ps1 | iex          # Windows PowerShell
-grok --version
+grog --version
 ```
 
 See the [changelog](https://x.ai/build/changelog) for the latest fixes,
@@ -62,12 +62,13 @@ Requirements:
 
 ```sh
 cargo run -p xai-grok-pager-bin              # build + launch the TUI
-cargo build -p xai-grok-pager-bin --release  # release binary: target/release/xai-grok-pager
+cargo build -p xai-grok-pager-bin --release  # release binary: target/release/grog
 cargo check -p xai-grok-pager-bin            # fast validation
 ```
 
-The binary artifact is named `xai-grok-pager`; official installs ship it as
-`grok`. On first launch it opens your browser to authenticate — see the
+The cargo artifact and user-facing command are named `grog` (not `grok`) so
+this fork does not shadow the upstream Grok CLI. On first launch it opens your
+browser to authenticate — see the
 [authentication guide](crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md).
 
 ## Documentation
@@ -84,7 +85,7 @@ MCP servers, skills, plugins, hooks, headless mode, sandboxing, and more.
 
 | Path | Contents |
 |------|----------|
-| `crates/codegen/xai-grok-pager-bin` | Composition-root package; builds the `xai-grok-pager` binary |
+| `crates/codegen/xai-grok-pager-bin` | Composition-root package; builds the `grog` binary |
 | `crates/codegen/xai-grok-pager` | The TUI: scrollback, prompt, modals, rendering |
 | `crates/codegen/xai-grok-shell` | Agent runtime + leader/stdio/headless entry points |
 | `crates/codegen/xai-grok-tools` | Tool implementations (terminal, file edit, search, ...) |

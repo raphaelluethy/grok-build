@@ -2276,7 +2276,7 @@ pub async fn remove_jj_workspace(workspace_path: &str) -> Result<()> {
 
 /// Request to resume an existing session in a fresh worktree.
 ///
-/// ACP equivalent of `grok -w -r <session_id>` (optionally with `--ref`).
+/// ACP equivalent of `grog -w -r <session_id>` (optionally with `--ref`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResumeSessionInWorktreeRequest {

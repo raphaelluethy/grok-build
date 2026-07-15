@@ -2,11 +2,11 @@
 // Thin trampoline: resolves the grok binary from the matching per-platform
 // optional dependency package and execs it.
 //
-// Falls back to bootstrapping the canonical ~/.grok/bin/grok-<version> symlink
+// Falls back to bootstrapping the canonical ~/.grok/bin/grog symlink
 // layout if postinstall hasn't run (e.g. npx, or postinstall failure).
 //
 // Binary location strategy (in priority order):
-//   1. ~/.grok/bin/grok        — canonical versioned symlink (postinstall.js)
+//   1. ~/.grok/bin/grog        — canonical versioned symlink (postinstall.js)
 //   2. @xai-official/grok-<platform>/bin/grok[.exe]      — decompressed sibling
 //   3. @xai-official/grok-<platform>/bin/grok[.exe].br   — brotli-compressed
 //
@@ -21,9 +21,10 @@ const zlib = require('zlib');
 const pkgName = '@xai-official/grok';
 const IS_WINDOWS = process.platform === 'win32';
 const EXE = IS_WINDOWS ? '.exe' : '';
-const BIN_NAME = `grok${EXE}`;
+const MANAGED_BIN = `grog${EXE}`;
+const VENDOR_BIN = `grok${EXE}`;
 const CANONICAL_DIR = path.join(os.homedir(), '.grok', 'bin');
-const CANONICAL_PATH = path.join(CANONICAL_DIR, BIN_NAME);
+const CANONICAL_PATH = path.join(CANONICAL_DIR, MANAGED_BIN);
 
 function readLocalVersion() {
     try { return require('../package.json').version; } catch { return undefined; }
@@ -56,7 +57,7 @@ function decompressBrotli(brPath, outPath) {
 function bootstrapCanonical(sourceBinPath, version) {
     try {
         fs.mkdirSync(CANONICAL_DIR, { recursive: true });
-        const versionedName = `grok-${version}${EXE}`;
+        const versionedName = `grog-${version}${EXE}`;
         const versionedPath = path.join(CANONICAL_DIR, versionedName);
         if (!fs.existsSync(versionedPath)) {
             const tmpPath = versionedPath + `.tmp.${process.pid}`;
@@ -103,7 +104,7 @@ function resolveBinary() {
         process.exit(1);
     }
 
-    const rawPath = path.join(platformDir, 'bin', BIN_NAME);
+    const rawPath = path.join(platformDir, 'bin', VENDOR_BIN);
     const brPath = rawPath + '.br';
 
     // Decompress on first use if needed (atomic via tmp+rename).

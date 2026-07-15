@@ -99,7 +99,7 @@ fn seed_previous_good(home: &Path, platform: &str) -> PathBuf {
     let prev = downloads.join(format!("grok-{platform}"));
     std::fs::write(&prev, GOOD_SCRIPT).unwrap();
     std::fs::set_permissions(&prev, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let link = bin.join("grok");
+    let link = bin.join("grog");
     let _ = std::fs::remove_file(&link);
     std::os::unix::fs::symlink(format!("../downloads/grok-{platform}"), &link).unwrap();
     dunce::canonicalize(&prev).unwrap()
@@ -108,7 +108,7 @@ fn seed_previous_good(home: &Path, platform: &str) -> PathBuf {
 /// Re-resolve `$BIN_DIR/grok` from disk and re-run it: the active grok must
 /// always execute, and never be a `.tmp`/partial file.
 fn assert_active_grok_runs(home: &Path) {
-    let link = home.join(".grok").join("bin").join("grok");
+    let link = home.join(".grok").join("bin").join("grog");
     assert!(link.is_symlink(), "grok must remain a symlink");
     let resolved =
         dunce::canonicalize(&link).unwrap_or_else(|e| panic!("grok symlink dangles: {e}"));

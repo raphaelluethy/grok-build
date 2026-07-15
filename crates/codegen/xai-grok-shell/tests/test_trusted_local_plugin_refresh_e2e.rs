@@ -6,7 +6,7 @@
 //! 3. Start a headless session — startup must re-copy trusted/user-home locals.
 //! 4. Smoke-validate session JSON under `$GROK_HOME/sessions/` after exit.
 //!
-//! Requires a built `grok` binary (`GROK_BINARY` or cargo-built pager) for the
+//! Requires a built `grog` binary (`GROK_BINARY` or cargo-built pager) for the
 //! ignored headless test.
 //!
 //! ```bash

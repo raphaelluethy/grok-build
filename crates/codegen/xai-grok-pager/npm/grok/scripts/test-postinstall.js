@@ -48,7 +48,7 @@ function semverSortDescending(a, b) {
 
 /** Install a versioned binary + atomic symlink (same as postinstall.js). */
 function installVersionedBinary(vendoredBinPath, version, canonicalDir) {
-    const canonicalPath = path.join(canonicalDir, 'grok');
+    const canonicalPath = path.join(canonicalDir, 'grog');
     fs.mkdirSync(canonicalDir, { recursive: true });
 
     const versionedName = `grok-${version}`;
@@ -88,7 +88,7 @@ function cleanupOldVersions(canonicalDir, currentVersionedName) {
 
 /** Bootstrap canonical from vendored (same as bin/grok trampoline). */
 function bootstrapCanonical(vendoredBinPath, version, canonicalDir) {
-    const canonicalPath = path.join(canonicalDir, 'grok');
+    const canonicalPath = path.join(canonicalDir, 'grog');
     try {
         fs.mkdirSync(canonicalDir, { recursive: true });
         const versionedName = `grok-${version}`;
@@ -198,7 +198,7 @@ test('symlink swap is atomic (no intermediate missing state)', () => {
     const dir = makeTmpDir();
     try {
         const binDir = path.join(dir, 'bin');
-        const canonicalPath = path.join(binDir, 'grok');
+        const canonicalPath = path.join(binDir, 'grog');
 
         const vendored = path.join(dir, 'vendored');
         fs.writeFileSync(vendored, 'v1');
@@ -223,7 +223,7 @@ test('handles upgrade from old-style regular file to versioned symlink', () => {
     const dir = makeTmpDir();
     try {
         const binDir = path.join(dir, 'bin');
-        const canonicalPath = path.join(binDir, 'grok');
+        const canonicalPath = path.join(binDir, 'grog');
         fs.mkdirSync(binDir, { recursive: true });
 
         // Simulate old installation: grok is a regular file
@@ -250,7 +250,7 @@ test('handles broken symlink (target deleted externally)', () => {
         fs.mkdirSync(binDir, { recursive: true });
 
         // Create a broken symlink (points to a file that doesn't exist)
-        const canonicalPath = path.join(binDir, 'grok');
+        const canonicalPath = path.join(binDir, 'grog');
         fs.symlinkSync('grok-0.1.99', canonicalPath);
         assert.ok(!fs.existsSync(canonicalPath), 'broken symlink should not "exist"');
 
@@ -282,7 +282,7 @@ test('three sequential upgrades: v1 -> v2 -> v3 all coexist', () => {
         installVersionedBinary(vendored, '0.1.3', binDir);
 
         // Symlink points to latest
-        assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grok')), 'grok-0.1.3');
+        assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grog')), 'grok-0.1.3');
 
         // All three versioned binaries still exist (no cleanup yet)
         assert.ok(fs.existsSync(path.join(binDir, 'grok-0.1.1')));
@@ -485,7 +485,7 @@ test('bootstrapCanonical creates versioned binary from vendored', () => {
 
         const result = bootstrapCanonical(vendored, '0.1.140', binDir);
 
-        assert.strictEqual(result, path.join(binDir, 'grok'));
+        assert.strictEqual(result, path.join(binDir, 'grog'));
         assert.ok(fs.existsSync(path.join(binDir, 'grok-0.1.140')), 'versioned binary should exist');
         assert.ok(fs.lstatSync(result).isSymbolicLink(), 'canonical should be symlink');
         assert.strictEqual(fs.readFileSync(result, 'utf8'), 'vendored-content');
@@ -555,7 +555,7 @@ test('bootstrapCanonical works when canonical already exists (different version)
         fs.writeFileSync(vendored2, 'v2');
         const result = bootstrapCanonical(vendored2, '0.1.141', binDir);
 
-        assert.strictEqual(result, path.join(binDir, 'grok'));
+        assert.strictEqual(result, path.join(binDir, 'grog'));
         // Symlink should now point to v2
         assert.strictEqual(fs.readlinkSync(result), 'grok-0.1.141');
         // v1 should still exist
@@ -596,8 +596,8 @@ test('full lifecycle: install, upgrade, cleanup', () => {
         assert.ok(!fs.existsSync(path.join(binDir, 'grok-0.1.140')), 'v1 should be removed');
 
         // Canonical symlink points to v3
-        assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grok')), 'grok-0.1.142');
-        assert.strictEqual(fs.readFileSync(path.join(binDir, 'grok'), 'utf8'), 'v3');
+        assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grog')), 'grok-0.1.142');
+        assert.strictEqual(fs.readFileSync(path.join(binDir, 'grog'), 'utf8'), 'v3');
     } finally {
         cleanup(dir);
     }
@@ -618,8 +618,8 @@ test('downgrade: installing older version than current', () => {
         installVersionedBinary(vendored, '0.1.140', binDir);
 
         // Symlink should now point to v1
-        assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grok')), 'grok-0.1.140');
-        assert.strictEqual(fs.readFileSync(path.join(binDir, 'grok'), 'utf8'), 'v1');
+        assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grog')), 'grok-0.1.140');
+        assert.strictEqual(fs.readFileSync(path.join(binDir, 'grog'), 'utf8'), 'v1');
 
         // v2 should still exist (never delete old binaries during install)
         assert.ok(fs.existsSync(path.join(binDir, 'grok-0.1.141')), 'v2 should still exist');
@@ -723,11 +723,11 @@ test('installing both grok and grok-pager creates independent symlinks', () => {
         const vendoredPager = path.join(dir, 'vendored-pager');
         fs.writeFileSync(vendoredPager, 'pager-binary');
 
-        installNamedBinary(vendored, 'grok', '0.1.141', binDir);
+        installNamedBinary(vendored, 'grog', '0.1.141', binDir);
         installNamedBinary(vendoredPager, 'grok-pager', '0.1.141', binDir);
 
         // Both symlinks exist and point to correct targets
-        assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grok')), 'grok-0.1.141');
+        assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grog')), 'grok-0.1.141');
         assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grok-pager')), 'grok-pager-0.1.141');
 
         // Both versioned files exist with correct content
@@ -756,7 +756,7 @@ test('cleanup of grok-* does not remove grok-pager-*', () => {
         fs.writeFileSync(path.join(binDir, 'grok-pager-0.1.139'), 'old-pager-2');
         fs.writeFileSync(path.join(binDir, 'grok-pager-0.1.141'), 'current-pager');
 
-        cleanupOldVersionsNamed(binDir, 'grok', '0.1.141');
+        cleanupOldVersionsNamed(binDir, 'grog', '0.1.141');
 
         // grok cleanup: current + N-1 kept, older removed
         assert.ok(fs.existsSync(path.join(binDir, 'grok-0.1.141')), 'current grok should exist');
@@ -818,23 +818,23 @@ test('full dual-binary lifecycle: install, upgrade, cleanup both', () => {
         // v1
         fs.writeFileSync(vendored, 'grok-v1');
         fs.writeFileSync(vendoredPager, 'pager-v1');
-        installNamedBinary(vendored, 'grok', '0.1.140', binDir);
+        installNamedBinary(vendored, 'grog', '0.1.140', binDir);
         installNamedBinary(vendoredPager, 'grok-pager', '0.1.140', binDir);
 
         // v2
         fs.writeFileSync(vendored, 'grok-v2');
         fs.writeFileSync(vendoredPager, 'pager-v2');
-        installNamedBinary(vendored, 'grok', '0.1.141', binDir);
+        installNamedBinary(vendored, 'grog', '0.1.141', binDir);
         installNamedBinary(vendoredPager, 'grok-pager', '0.1.141', binDir);
 
         // v3
         fs.writeFileSync(vendored, 'grok-v3');
         fs.writeFileSync(vendoredPager, 'pager-v3');
-        installNamedBinary(vendored, 'grok', '0.1.142', binDir);
+        installNamedBinary(vendored, 'grog', '0.1.142', binDir);
         installNamedBinary(vendoredPager, 'grok-pager', '0.1.142', binDir);
 
         // Cleanup both independently
-        cleanupOldVersionsNamed(binDir, 'grok', '0.1.142');
+        cleanupOldVersionsNamed(binDir, 'grog', '0.1.142');
         cleanupOldVersionsNamed(binDir, 'grok-pager', '0.1.142');
 
         // Current + N-1 for each
@@ -847,7 +847,7 @@ test('full dual-binary lifecycle: install, upgrade, cleanup both', () => {
         assert.ok(!fs.existsSync(path.join(binDir, 'grok-pager-0.1.140')));
 
         // Symlinks correct
-        assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grok')), 'grok-0.1.142');
+        assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grog')), 'grok-0.1.142');
         assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grok-pager')), 'grok-pager-0.1.142');
     } finally {
         cleanup(dir);
@@ -860,7 +860,7 @@ test('full dual-binary lifecycle: install, upgrade, cleanup both', () => {
 
 console.log('\nmacOS-only pager platform split tests\n');
 
-test('grok installs normally regardless of platform key', () => {
+test('grog installs normally regardless of platform key', () => {
     const dir = makeTmpDir();
     try {
         const binDir = path.join(dir, 'bin');
@@ -868,8 +868,8 @@ test('grok installs normally regardless of platform key', () => {
         fs.writeFileSync(vendored, 'grok-binary');
 
         for (const platform of ['darwin-arm64', 'linux-x64', 'linux-arm64']) {
-            const result = installNamedBinary(vendored, 'grok', '0.1.150', binDir);
-            assert.ok(fs.existsSync(result.versionedPath), `grok should install for ${platform}`);
+            const result = installNamedBinary(vendored, 'grog', '0.1.150', binDir);
+            assert.ok(fs.existsSync(result.versionedPath), `grog should install for ${platform}`);
             assert.strictEqual(fs.readlinkSync(result.canonicalPath), 'grok-0.1.150');
         }
     } finally {
@@ -914,8 +914,8 @@ test('Linux pager vendor files are not required for grok install', () => {
         // grok install should succeed independently
         const grokVendored = path.join(dir, 'vendored-grok');
         fs.writeFileSync(grokVendored, 'grok-linux');
-        const result = installNamedBinary(grokVendored, 'grok', '0.1.150', binDir);
-        assert.ok(fs.existsSync(result.versionedPath), 'grok should install without Linux pager');
+        const result = installNamedBinary(grokVendored, 'grog', '0.1.150', binDir);
+        assert.ok(fs.existsSync(result.versionedPath), 'grog should install without Linux pager');
     } finally {
         cleanup(dir);
     }
@@ -929,16 +929,16 @@ test('skipping pager install on Linux does not affect grok cleanup', () => {
 
         // Install grok across two versions
         fs.writeFileSync(vendored, 'grok-v1');
-        installNamedBinary(vendored, 'grok', '0.1.149', binDir);
+        installNamedBinary(vendored, 'grog', '0.1.149', binDir);
         fs.writeFileSync(vendored, 'grok-v2');
-        installNamedBinary(vendored, 'grok', '0.1.150', binDir);
+        installNamedBinary(vendored, 'grog', '0.1.150', binDir);
 
         // Simulate Linux: only run grok cleanup, skip pager entirely
-        cleanupOldVersionsNamed(binDir, 'grok', '0.1.150');
+        cleanupOldVersionsNamed(binDir, 'grog', '0.1.150');
 
         assert.ok(fs.existsSync(path.join(binDir, 'grok-0.1.150')), 'current grok should exist');
         assert.ok(fs.existsSync(path.join(binDir, 'grok-0.1.149')), 'N-1 grok should be kept');
-        assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grok')), 'grok-0.1.150');
+        assert.strictEqual(fs.readlinkSync(path.join(binDir, 'grog')), 'grok-0.1.150');
 
         // No pager files should exist at all
         const entries = fs.readdirSync(binDir);
@@ -965,8 +965,8 @@ test('canonical pager from non-npm install is preserved on Linux', () => {
         // Run grok-only install + cleanup (simulating Linux postinstall)
         const vendored = path.join(dir, 'vendored');
         fs.writeFileSync(vendored, 'grok-binary');
-        installNamedBinary(vendored, 'grok', '0.1.150', binDir);
-        cleanupOldVersionsNamed(binDir, 'grok', '0.1.150');
+        installNamedBinary(vendored, 'grog', '0.1.150', binDir);
+        cleanupOldVersionsNamed(binDir, 'grog', '0.1.150');
 
         // Pager installed by other means must be untouched
         assert.ok(fs.existsSync(pagerCanonical), 'canonical pager should survive');

@@ -83,24 +83,24 @@ async function packPlatform({ platform, arch, envVar, defaultSource, binName }) 
 async function main() {
     const targets = [
         {
-            platform: 'darwin', arch: 'arm64', binName: 'grok',
+            platform: 'darwin', arch: 'arm64', binName: 'grog',
             envVar: 'GROK_DARWIN_ARM64',
             defaultSource: path.join(xaiRoot, 'target', 'release', 'xai-grok-pager'),
         },
         {
-            platform: 'darwin', arch: 'x64', binName: 'grok',
+            platform: 'darwin', arch: 'x64', binName: 'grog',
             envVar: 'GROK_DARWIN_X64',
             defaultSource: path.join(xaiRoot, 'target', 'x86_64-apple-darwin', 'release', 'xai-grok-pager'),
         },
         {
-            platform: 'linux', arch: 'x64', binName: 'grok',
+            platform: 'linux', arch: 'x64', binName: 'grog',
             envVar: 'GROK_LINUX_X64',
             defaultSource: path.join(xaiRoot, 'target',
                 'explorer_cross_x86_64-unknown-linux-gnu',
                 'x86_64-unknown-linux-gnu', 'release', 'xai-grok-pager'),
         },
         {
-            platform: 'linux', arch: 'arm64', binName: 'grok',
+            platform: 'linux', arch: 'arm64', binName: 'grog',
             envVar: 'GROK_LINUX_ARM64',
             defaultSource: path.join(xaiRoot, 'target',
                 'explorer_cross_aarch64-unknown-linux-gnu',

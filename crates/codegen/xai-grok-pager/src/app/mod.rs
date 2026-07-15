@@ -380,7 +380,7 @@ fn resolve_hunk_tracker_mode(
 /// its history). Sessions not found locally are restored from remote storage.
 ///
 /// Returns `Ok(true)` when the user accepted a pending update. The caller
-/// should print a message telling the user to relaunch `grok`.
+/// should print a message telling the user to relaunch `grog`.
 pub async fn run(
     args: PagerArgs,
     bg_update_rx: Option<

@@ -57,9 +57,12 @@ pub fn user_grok_home() -> Option<PathBuf> {
     resolvable.then(grok_home)
 }
 
-/// Canonical grok application path: `$GROK_HOME/bin/grok` (Unix) or `grok.exe` (Windows).
+/// Canonical CLI application path: `$GROK_HOME/bin/grog` (Unix) or `grog.exe` (Windows).
+///
+/// Named `grog` (not `grok`) so managed installs do not shadow the upstream
+/// `grok` CLI on `PATH`.
 pub fn grok_application() -> PathBuf {
-    let name = if cfg!(windows) { "grok.exe" } else { "grok" };
+    let name = if cfg!(windows) { "grog.exe" } else { "grog" };
     grok_home().join("bin").join(name)
 }
 

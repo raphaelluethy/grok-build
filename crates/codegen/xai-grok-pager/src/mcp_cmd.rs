@@ -1,4 +1,4 @@
-//! `grok mcp` — manage MCP server configurations from the command line.
+//! `grog mcp` — manage MCP server configurations from the command line.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -166,7 +166,7 @@ fn run_list(json: bool) -> Result<()> {
             .collect();
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else if servers.is_empty() {
-        println!("No MCP servers configured. Run `grok mcp add --help` to get started.");
+        println!("No MCP servers configured. Run `grog mcp add --help` to get started.");
     } else {
         for (name, (config, scope)) in &servers {
             let transport = match &config.transport {
@@ -691,7 +691,7 @@ mod tests {
 
     #[test]
     fn add_hyphen_flag_without_double_dash_is_rejected() {
-        let err = PagerArgs::try_parse_from(["grok", "mcp", "add", "fs", "npx", "-y"])
+        let err = PagerArgs::try_parse_from(["grog", "mcp", "add", "fs", "npx", "-y"])
             .expect_err("hyphen args must be escaped with --");
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
     }
@@ -1033,7 +1033,7 @@ mod tests {
 
     #[test]
     fn remove_accepts_optional_scope() {
-        let args = PagerArgs::try_parse_from(["grok", "mcp", "remove", "fs", "-s", "project"])
+        let args = PagerArgs::try_parse_from(["grog", "mcp", "remove", "fs", "-s", "project"])
             .expect("remove with scope parses");
         match args.command {
             Some(Command::Mcp(McpArgs {

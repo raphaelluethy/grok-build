@@ -3,8 +3,8 @@
 // matching per-platform optional dependency (@xai-official/grok-<platform>)
 // and installs it to ~/.grok/bin/ using versioned filenames:
 //
-//   Unix:    grok-<version>  +  grok  (symlink)
-//   Windows: grok-<version>.exe  +  grok.exe  (copy)
+//   Unix:    grog-<version>  +  grog  (symlink)
+//   Windows: grog-<version>.exe  +  grog.exe  (copy)
 //
 // Versioned files ensure running processes are never disrupted on macOS
 // (replacing a binary that a running process has mmap'd causes SIGKILL
@@ -171,8 +171,8 @@ if (!platformDir) {
     process.exit(0);
 }
 
-installBinary('grok', platformDir, `grok${EXE}`);
-cleanupOldVersions('grok');
+installBinary('grog', platformDir, `grok${EXE}`);
+cleanupOldVersions('grog');
 cleanupOldVersions('grok-pager');
 
 // Write installer config
@@ -183,7 +183,7 @@ try { obj = TOML.parse(fs.readFileSync(configPath, 'utf8')); } catch { }
 obj.cli ??= {};
 obj.cli.installer = 'npm';
 
-// Persist the npm registry so `grok update` and the trampoline use the same one.
+// Persist the npm registry so `grog update` and the trampoline use the same one.
 const npmRegistry = process.env.GROK_NPM_REGISTRY
     || (() => {
         try {
@@ -220,6 +220,6 @@ if (process.env.GROK_INSTALL_COMPLETIONS === '1' && !IS_WINDOWS) {
         console.log('Completions generated to ~/.grok/completions (bash/zsh)');
     } catch {}
 } else if (!IS_WINDOWS) {
-    console.log('Tip: grok completions bash > ~/.local/share/bash-completion/completions/grok');
+    console.log('Tip: grog completions bash > ~/.local/share/bash-completion/completions/grog');
     console.log('     grok completions zsh  > ~/.zsh/completions/_grok');
 }

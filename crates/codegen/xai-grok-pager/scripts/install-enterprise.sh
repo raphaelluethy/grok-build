@@ -6,7 +6,7 @@
 # copy of the install logic (not a wrapper around install.sh) so that changes to
 # the stable installer cannot accidentally break enterprise deployments.
 #
-# Auth: GROK_DEPLOYMENT_KEY (takes precedence) or ~/.grok/auth.json from `grok login`.
+# Auth: GROK_DEPLOYMENT_KEY (takes precedence) or ~/.grok/auth.json from `grog login`.
 # Env: GROK_BIN_DIR, GROK_PROXY_URL
 #
 # Usage:
@@ -232,7 +232,7 @@ fi
 if [ "$os" = "windows" ]; then
     # Symlinks require Developer Mode on Windows; copy instead.
     # If the exe is locked by a running process, rename it aside then retry.
-    for bin_name in grok.exe agent.exe; do
+    for bin_name in grog.exe agent.exe; do
         rm -f "$BIN_DIR/$bin_name.old" 2>/dev/null || true  # stale backup from prior update
         if ! cp -f "$binary_path" "$BIN_DIR/$bin_name" 2>/dev/null; then
             mv -f "$BIN_DIR/$bin_name" "$BIN_DIR/$bin_name.old" 2>/dev/null || true
@@ -244,21 +244,21 @@ if [ "$os" = "windows" ]; then
             fi
         fi
     done
-    echo "  Binary installed to $BIN_DIR/grok.exe and $BIN_DIR/agent.exe." >&2
+    echo "  Binary installed to $BIN_DIR/grog.exe and $BIN_DIR/agent.exe." >&2
 else
     chmod +x "$binary_path"
-    ln -sf "$binary_path" "$BIN_DIR/grok"
+    ln -sf "$binary_path" "$BIN_DIR/grog"
     ln -sf "$binary_path" "$BIN_DIR/agent"
-    echo "  Binary linked to $BIN_DIR/grok and $BIN_DIR/agent." >&2
+    echo "  Binary linked to $BIN_DIR/grog and $BIN_DIR/agent." >&2
 fi
 
 # Generate shell completions (best-effort)
 mkdir -p "$HOME/.grok/completions/bash" "$HOME/.grok/completions/zsh"
-"$BIN_DIR/grok" completions bash > "$HOME/.grok/completions/bash/grok.bash" 2>/dev/null || true
-"$BIN_DIR/grok" completions zsh  > "$HOME/.grok/completions/zsh/_grok"     2>/dev/null || true
+"$BIN_DIR/grog" completions bash > "$HOME/.grok/completions/bash/grog.bash" 2>/dev/null || true
+"$BIN_DIR/grog" completions zsh  > "$HOME/.grok/completions/zsh/_grog"     2>/dev/null || true
 # Fish: write to the auto-loaded completions dir so it works immediately
 if mkdir -p "$HOME/.config/fish/completions" 2>/dev/null; then
-    "$BIN_DIR/grok" completions fish > "$HOME/.config/fish/completions/grok.fish" 2>/dev/null || true
+    "$BIN_DIR/grog" completions fish > "$HOME/.config/fish/completions/grog.fish" 2>/dev/null || true
 fi
 
 # Persist installer source and channel to config
@@ -315,9 +315,9 @@ if [ -n "$GROK_DEPLOYMENT_KEY" ]; then
 fi
 
 if [ "$os" = "windows" ]; then
-    echo "Grok $version installed to $BIN_DIR/grok.exe" >&2
+    echo "Grok $version installed to $BIN_DIR/grog.exe" >&2
 else
-    echo "Grok $version installed to $BIN_DIR/grok" >&2
+    echo "Grok $version installed to $BIN_DIR/grog" >&2
 fi
 
 # --- Ensure grok is on PATH ---
@@ -332,10 +332,10 @@ SYMLINK_CREATED=""
 if [ "$os" != "windows" ] && ! path_has_dir "$BIN_DIR"; then
     for candidate in "$HOME/.local/bin" "/usr/local/bin"; do
         if path_has_dir "$candidate" && [ -d "$candidate" ] && [ -w "$candidate" ]; then
-            ln -sf "$BIN_DIR/grok" "$candidate/grok"
+            ln -sf "$BIN_DIR/grog" "$candidate/grog"
             ln -sf "$BIN_DIR/agent" "$candidate/agent"
             SYMLINK_CREATED="$candidate"
-            echo "  Symlinked $candidate/grok -> $BIN_DIR/grok" >&2
+            echo "  Symlinked $candidate/grog -> $BIN_DIR/grog" >&2
             echo "  Symlinked $candidate/agent -> $BIN_DIR/agent" >&2
             break
         fi
@@ -388,7 +388,7 @@ autoload -Uz compinit && compinit -C
     else
         new_block='# >>> grok installer >>>
 export PATH="$HOME/.grok/bin:$PATH"
-[[ -r "$HOME/.grok/completions/bash/grok.bash" ]] && source "$HOME/.grok/completions/bash/grok.bash"
+[[ -r "$HOME/.grok/completions/bash/grog.bash" ]] && source "$HOME/.grok/completions/bash/grog.bash"
 # <<< grok installer <<<'
     fi
 
@@ -417,11 +417,11 @@ fi
 
 echo "" >&2
 if path_has_dir "$BIN_DIR" || [ -n "$SYMLINK_CREATED" ]; then
-    echo "Run 'grok' or 'agent' to get started!" >&2
+    echo "Run 'grog' or 'agent' to get started!" >&2
 elif [ -n "$config_file" ]; then
-    echo "Restart your terminal, then run 'grok' or 'agent' to get started!" >&2
+    echo "Restart your terminal, then run 'grog' or 'agent' to get started!" >&2
 else
-    echo "Add $BIN_DIR to your PATH, then run 'grok' or 'agent' to get started:" >&2
+    echo "Add $BIN_DIR to your PATH, then run 'grog' or 'agent' to get started:" >&2
     echo '  export PATH="$HOME/.grok/bin:$PATH"' >&2
 fi
 

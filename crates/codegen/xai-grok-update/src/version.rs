@@ -417,11 +417,11 @@ pub async fn is_version_cache_fresh() -> bool {
 pub use xai_grok_version::installed as get_installed_grok_version;
 
 /// Version of the managed grok binary currently on disk, read from the
-/// `~/.grok/bin/grok` symlink target (`../downloads/grok-<version>-<platform>`)
+/// `~/.grok/bin/grog` symlink target (`../downloads/grok-<version>-<platform>`)
 /// without exec'ing anything.
 ///
 /// Concurrent updaters (TUI background download, leader hourly checker,
-/// explicit `grok update`) decide staleness from this instead of their own
+/// explicit `grog update`) decide staleness from this instead of their own
 /// compiled-in version, so a binary another process already installed is
 /// never downloaded a second time.
 ///
@@ -459,7 +459,7 @@ pub fn installed_on_disk_version() -> Option<String> {
 /// `grok-0.1.150-alpha.1`): everything between the `{bin_prefix}-` prefix
 /// and the first platform-OS component is the version, validated as semver
 /// so unknown layouts (`grok-latest`, `grok-pager-*` when `bin_prefix` is
-/// `grok`) return `None` instead of garbage.
+/// `grog`) return `None` instead of garbage.
 ///
 /// Shared by the disk-version probe above and `cleanup_old_downloads` in
 /// `auto_update` — keep it the single place that understands this naming.

@@ -140,7 +140,7 @@ pub struct UiConfig {
     /// Sticky screen-mode preference (`"minimal"` | `"fullscreen"`). Written by
     /// the pager when an explicit `--minimal`/`--fullscreen` flag or a
     /// `/minimal`//`/fullscreen` command is used, and read at startup so plain
-    /// `grok` reopens in whatever mode was last explicitly chosen. Unset keeps
+    /// `grog` reopens in whatever mode was last explicitly chosen. Unset keeps
     /// the legacy resolution (pager.toml `[terminal] minimal`, alt-screen
     /// policy).
     #[serde(default, skip_serializing_if = "Option::is_none")]

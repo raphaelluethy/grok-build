@@ -5,8 +5,8 @@
 //! session initialization crashes, and protocol regressions.
 //!
 //! The tests exercise:
-//! - **Smoke** (`grok --version`): binary loads without crashing
-//! - **ACP stdio** (`grok agent stdio`): full protocol lifecycle via ClientSideConnection
+//! - **Smoke** (`grog --version`): binary loads without crashing
+//! - **ACP stdio** (`grog agent stdio`): full protocol lifecycle via ClientSideConnection
 //!
 //! Tests are `#[ignore]`d by default — they require a pre-built binary.
 //!
@@ -952,7 +952,7 @@ async fn invalid_json_schema_disables_structured_output_and_surfaces_error() {
 // ============================================================================
 // ACP stdio tests (grok agent stdio)
 //
-// These test the agent as a server: spawn `grok agent stdio`, speak the full
+// These test the agent as a server: spawn `grog agent stdio`, speak the full
 // ACP protocol over pipes, verify the lifecycle works end-to-end.
 // ============================================================================
 

@@ -352,14 +352,14 @@ impl TrustStore {
 /// repo (trust applies to the whole repo), otherwise the canonicalized `cwd`.
 ///
 /// A grok-managed worktree first collapses onto its recorded source repo's git
-/// ROOT (via the `~/.grok/worktrees.db` registry), so every `grok -w` worktree
+/// ROOT (via the `~/.grok/worktrees.db` registry), so every `grog -w` worktree
 /// shares one trust key regardless of creation mode — including standalone clones
 /// that git can't link back to their source — and regardless of the subdir
-/// `grok -w` was launched from (the recorded source repo may be a repo subdir).
+/// `grog -w` was launched from (the recorded source repo may be a repo subdir).
 /// Non-registry git worktrees fall through to the git-topology collapse below.
 ///
 /// A linked git worktree collapses onto its MAIN checkout's root so every
-/// `grok -w` worktree of a repo shares one trust key. The collapse fires ONLY
+/// `grog -w` worktree of a repo shares one trust key. The collapse fires ONLY
 /// for the conventional `<workdir>/.git` layout — i.e. the common gitdir
 /// resolves back to `<main_workdir>/.git`. For bare or `--separate-git-dir`
 /// repos (where the common gitdir's inferred workdir would be the gitdir's
@@ -1277,7 +1277,7 @@ mod tests {
 
     #[test]
     fn workspace_key_collapses_linked_worktrees_onto_main_checkout() {
-        // Every linked `grok -w` worktree of a repo must share ONE trust key:
+        // Every linked `grog -w` worktree of a repo must share ONE trust key:
         // its main checkout's root. Build a real repo + two linked worktrees and
         // assert each collapses onto the main checkout (so it is trusted once,
         // not re-prompted per worktree).
