@@ -102,6 +102,11 @@ pub struct GrokAuth {
     /// OIDC client_id used to obtain this token (needed for refresh).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oidc_client_id: Option<String>,
+
+    /// ChatGPT account id from OAuth id/access token claims (OpenAI provider).
+    /// Sent as the `ChatGPT-Account-Id` header on Codex backend requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chatgpt_account_id: Option<String>,
 }
 
 impl std::fmt::Debug for GrokAuth {
@@ -211,6 +216,7 @@ impl Default for GrokAuth {
             expires_at: None,
             oidc_issuer: None,
             oidc_client_id: None,
+            chatgpt_account_id: None,
         }
     }
 }
@@ -361,6 +367,7 @@ mod tests {
             expires_at: None,
             oidc_issuer: None,
             oidc_client_id: None,
+            chatgpt_account_id: None,
         }
     }
 

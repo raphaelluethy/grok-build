@@ -41,6 +41,8 @@ pub struct Config {
     /// `[session]` section — round-tripped through `merge_section` so
     /// pager setters can persist session fields (e.g. auto-compact threshold).
     pub session: crate::agent::config::SessionConfig,
+    /// `[provider]` — active LLM auth provider (grok / openai).
+    pub provider: crate::auth::ProviderConfig,
     /// `[toolset.ask_user_question]` sub-table — the only `[toolset]` piece
     /// the settings modal writes; the rest of `[toolset]` never round-trips
     /// (it carries runtime-only structs whose defaults must not hit disk).

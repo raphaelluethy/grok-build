@@ -957,6 +957,14 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             app.welcome_prompt_focused = false;
             effects
         }
+        TaskResult::ProviderOpComplete { message, ok } => {
+            if ok {
+                app.show_toast(&message);
+            } else {
+                app.show_toast(&format!("Provider: {message}"));
+            }
+            vec![]
+        }
         TaskResult::DeepSearchResults { results, seq } => {
             handle_deep_search_results(app, results, seq)
         }

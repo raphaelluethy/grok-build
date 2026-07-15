@@ -81,6 +81,50 @@ pub(crate) fn execute(
                     TaskResult::LogoutComplete
                 });
         }
+        Effect::SetProvider { id } => {
+            tasks.spawn(async move {
+                match xai_grok_shell::auth::set_active_provider(id).await {
+                    Ok(()) => TaskResult::ProviderOpComplete {
+                        message: format!("Provider set to {}", id.display_name()),
+                        ok: true,
+                    },
+                    Err(e) => TaskResult::ProviderOpComplete {
+                        message: format!("Failed to set provider: {e}"),
+                        ok: false,
+                    },
+                }
+            });
+        }
+        Effect::LoginProvider { id } => {
+            tasks.spawn(async move {
+                let _ = xai_grok_shell::auth::set_active_provider(id).await;
+                match id {
+                    xai_grok_shell::auth::ProviderId::Grok => TaskResult::ProviderOpComplete {
+                        message: "Use /login for Grok authentication".into(),
+                        ok: true,
+                    },
+                    xai_grok_shell::auth::ProviderId::Openai => {
+                        let home = xai_grok_shell::util::grok_home::grok_home();
+                        match xai_grok_shell::auth::chatgpt::run_chatgpt_login(&home).await {
+                            Ok(auth) => TaskResult::ProviderOpComplete {
+                                message: format!(
+                                    "Logged in to OpenAI{}",
+                                    auth.email
+                                        .as_deref()
+                                        .map(|e| format!(" as {e}"))
+                                        .unwrap_or_default()
+                                ),
+                                ok: true,
+                            },
+                            Err(e) => TaskResult::ProviderOpComplete {
+                                message: format!("OpenAI login failed: {e}"),
+                                ok: false,
+                            },
+                        }
+                    }
+                }
+            });
+        }
         Effect::CheckSubscription { verify } => {
             let tx = acp_tx.clone();
             tasks.spawn(async move { send_check_subscription(&tx, verify).await });

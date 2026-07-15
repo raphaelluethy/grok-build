@@ -42,6 +42,7 @@ pub mod personas;
 pub mod plan;
 pub mod plugin;
 pub mod privacy;
+pub mod provider;
 pub mod queue;
 pub mod recap;
 pub mod release_notes;
@@ -128,6 +129,7 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(rewind::RewindCommand),
         Arc::new(login::LoginCommand),
         Arc::new(logout::LogoutCommand),
+        Arc::new(provider::ProviderCommand),
         Arc::new(import_claude::ImportClaudeCommand),
         Arc::new(usage::UsageCommand),
         Arc::new(queue::QueueCommand),

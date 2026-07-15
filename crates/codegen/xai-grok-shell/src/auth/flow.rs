@@ -1545,6 +1545,7 @@ mod tests {
             expires_at: None,
             oidc_issuer: None,
             oidc_client_id: None,
+        chatgpt_account_id: None,
         }
     }
 

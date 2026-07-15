@@ -20,6 +20,37 @@ pub(super) fn dispatch_logout(_app: &mut AppView) -> Vec<Effect> {
     vec![Effect::Logout]
 }
 
+/// `/provider <id>` — persist active provider and show a toast.
+pub(super) fn dispatch_set_provider(
+    app: &mut AppView,
+    id: xai_grok_shell::auth::ProviderId,
+) -> Vec<Effect> {
+    app.show_toast(&format!("Active provider: {}", id.display_name()));
+    vec![Effect::SetProvider { id }]
+}
+
+/// `/provider login <id>` — log in to Grok (existing flow) or OpenAI ChatGPT OAuth.
+pub(super) fn dispatch_login_provider(
+    app: &mut AppView,
+    id: xai_grok_shell::auth::ProviderId,
+) -> Vec<Effect> {
+    match id {
+        xai_grok_shell::auth::ProviderId::Grok => {
+            // Switch active provider first, then reuse the standard Grok login UI.
+            let mut effects = vec![Effect::SetProvider { id }];
+            effects.extend(dispatch_login(app));
+            effects
+        }
+        xai_grok_shell::auth::ProviderId::Openai => {
+            app.show_toast("Opening OpenAI ChatGPT login…");
+            vec![
+                Effect::SetProvider { id },
+                Effect::LoginProvider { id },
+            ]
+        }
+    }
+}
+
 /// Ensure `login_method_id` is populated from stored auth methods.
 /// On the eager-auth path (cached token), login_method_id is never set
 /// because the user skipped the login screen.

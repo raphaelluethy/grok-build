@@ -591,6 +591,10 @@ pub enum Action {
     PermissionCancel,
     /// Log out: remove credentials and return to the login screen.
     Logout,
+    /// Select the active LLM provider (Grok / OpenAI).
+    SetProvider(xai_grok_shell::auth::ProviderId),
+    /// Log in to a specific LLM provider.
+    LoginProvider(xai_grok_shell::auth::ProviderId),
     /// Log out and immediately start a new login flow.
     SwitchAccount,
     /// User pressed login on the welcome screen.
@@ -1862,6 +1866,14 @@ pub enum Effect {
     },
     /// Log out via `x.ai/auth/logout` (shell clears auth.json + in-memory state).
     Logout,
+    /// Persist `[provider].active` to config.toml.
+    SetProvider {
+        id: xai_grok_shell::auth::ProviderId,
+    },
+    /// Run OpenAI ChatGPT OAuth (or no-op for Grok — that uses Authenticate).
+    LoginProvider {
+        id: xai_grok_shell::auth::ProviderId,
+    },
     /// Re-check subscription status via `x.ai/auth/check_subscription`.
     /// `verify` scopes the result to a deferred-gate verification (see
     /// [`crate::app::subscription`]); `None` for generic checks.
@@ -2539,6 +2551,11 @@ pub enum TaskResult {
     },
     /// Shell acknowledged logout (auth cleared).
     LogoutComplete,
+    /// Provider preference persisted / login finished.
+    ProviderOpComplete {
+        message: String,
+        ok: bool,
+    },
     /// Shell responded to `x.ai/auth/check_subscription`. `verify` echoes
     /// the generation from `Effect::CheckSubscription` for deferred-gate
     /// verifications.

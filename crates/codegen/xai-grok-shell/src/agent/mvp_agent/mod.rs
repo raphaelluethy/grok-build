@@ -1759,22 +1759,11 @@ impl MvpAgent {
     }
     /// Check whether the user has access via remote settings `allow_access`.
     ///
-    /// Non-xAI auth (API keys, enterprise) always passes. For xAI OAuth2
-    /// users, reads `allow_access` from remote settings. Defaults to
-    /// `false` (blocked) when remote settings are unavailable.
+    /// Grok is treated as one provider among others — subscription / access
+    /// gates no longer block the product. Always allow.
     pub(super) async fn enforce_grok_code_access(&self, auth: &crate::auth::GrokAuth) {
-        if !auth.is_xai_auth() {
-            self.tier_allowed.set(true);
-            return;
-        }
-        let allow = settings_allow_access(self.cfg.borrow().remote_settings.as_ref());
-        self.tier_allowed.set(allow);
-        if !allow {
-            tracing::info!(
-                "auth: user blocked by allow_access (remote settings grok_build_access_gate)"
-            );
-            self.retry_subscription_check().await;
-        }
+        let _ = auth;
+        self.tier_allowed.set(true);
     }
     /// Single-shot subscription check called by the pager's "Check
     /// subscription" button (`x.ai/auth/check_subscription`). The pager

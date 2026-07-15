@@ -190,7 +190,7 @@ pub(crate) fn read_auth_json_or_empty_recovering_corrupt(
 ///   relogin). This window is inherent to any sub-1×-free single-file
 ///   replace and is preferable to persisting nothing at all, which would
 ///   leave every concurrent process with a stale, already-revoked token.
-pub(super) fn write_auth_json(auth_file: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
+pub(crate) fn write_auth_json(auth_file: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
     write_auth_json_with(auth_file, auth_store, write_auth_json_atomic)
 }
 

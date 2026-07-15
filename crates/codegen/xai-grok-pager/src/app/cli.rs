@@ -39,6 +39,17 @@ pub enum Command {
         /// `devbox-login` is enabled (`arg(skip)` otherwise → always false).
         #[arg(skip)]
         devbox: bool,
+        /// LLM provider to log in to (`grok` or `openai`). Defaults to grok.
+        #[arg(long = "provider", value_name = "PROVIDER")]
+        provider: Option<String>,
+    },
+    /// Show or set the active LLM provider (grok / openai)
+    Provider {
+        /// Provider id to activate (`grok` or `openai`). Omit to print status.
+        provider: Option<String>,
+        /// Log in to the given provider instead of only switching.
+        #[arg(long)]
+        login: bool,
     },
     /// Manage MCP server configurations
     Mcp(crate::mcp_cmd::McpArgs),

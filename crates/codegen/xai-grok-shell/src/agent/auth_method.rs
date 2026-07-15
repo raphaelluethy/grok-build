@@ -960,6 +960,7 @@ mod tests {
             email: Some("legacy@example.com".into()),
             oidc_issuer: None,
             oidc_client_id: None,
+            chatgpt_account_id: None,
             refresh_token: None,
             expires_at: None,
             ..GrokAuth::test_default()

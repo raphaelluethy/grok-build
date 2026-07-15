@@ -1835,6 +1835,14 @@ pub fn resolve_model_catalog(
 ) -> IndexMap<String, ModelEntry> {
     let mut catalog: IndexMap<String, ModelEntry> = config::resolve_model_list(cfg, prefetched);
 
+    // When OpenAI ChatGPT OAuth is the active provider, inject Codex models
+    // (and prefer them) so `/model` and inference work without a Grok catalog.
+    if crate::agent::openai_models::openai_provider_active() {
+        for (key, entry) in crate::agent::openai_models::openai_builtin_models() {
+            catalog.entry(key).or_insert(entry);
+        }
+    }
+
     if let Ok(Some(disabled)) = ModelGlobSet::compile(cfg.models.disabled_models.as_ref()) {
         let before = catalog.len();
         catalog.retain(|key, entry| !disabled.matches(key, &entry.model));

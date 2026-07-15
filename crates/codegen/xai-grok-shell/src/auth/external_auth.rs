@@ -64,6 +64,7 @@ pub(crate) fn parse_output(output: &std::process::Output) -> anyhow::Result<Grok
         expires_at,
         oidc_issuer: None,
         oidc_client_id: None,
+    chatgpt_account_id: None,
     })
 }
 

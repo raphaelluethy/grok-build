@@ -41,6 +41,10 @@ impl Drop for EnrichmentExitGuard {
 }
 
 pub(super) fn spawn(manager: Arc<AuthManager>, auth: GrokAuth) {
+    // ChatGPT OAuth tokens are not valid against cli-chat-proxy `/user`.
+    if crate::auth::provider::is_openai_auth(&auth) {
+        return;
+    }
     tokio::spawn(async move {
         let mut exit_guard = EnrichmentExitGuard {
             started: std::time::Instant::now(),

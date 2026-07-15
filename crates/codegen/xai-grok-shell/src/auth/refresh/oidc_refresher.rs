@@ -218,6 +218,27 @@ impl TokenRefresher for OidcRefresher {
         let pre_token = crate::auth::model::token_suffix(&auth.key).to_owned();
         let pre_email = auth.email.clone().unwrap_or_else(|| "unknown".into());
 
+        // ChatGPT OAuth uses a hardcoded token endpoint (no OIDC discovery).
+        if crate::auth::provider::is_openai_auth(&auth) {
+            return match crate::auth::chatgpt::refresh_chatgpt_tokens(&auth).await {
+                Ok(new_auth) => {
+                    self.note_refresh_progress();
+                    RefreshOutcome::success(new_auth)
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    if msg.contains("invalid_grant") {
+                        RefreshOutcome::permanent(
+                            RefreshTokenFailedReason::RefreshTokenRejected,
+                            Some(auth.key.clone()),
+                        )
+                    } else {
+                        self.record_transient_failure(msg, Some(auth.key.clone()))
+                    }
+                }
+            };
+        }
+
         match crate::auth::oidc::oidc_token_exchange(&auth).await {
             OidcRefreshResult::Success(new_auth) => {
                 self.note_refresh_progress();

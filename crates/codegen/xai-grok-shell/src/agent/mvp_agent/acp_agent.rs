@@ -239,7 +239,19 @@ impl acp::Agent for MvpAgent {
             ),
         );
         let mut has_cached_token = init_has_current;
-        if !init_has_current && init_is_expired {
+
+        // Multi-provider: if OpenAI is active and ChatGPT OAuth creds exist on
+        // disk, adopt them into the in-memory manager so startup skips the
+        // Grok login screen.
+        if crate::auth::active_provider() == crate::auth::ProviderId::Openai {
+            if let Some(openai_auth) = crate::agent::config::load_openai_auth_for_startup() {
+                self.auth_manager.hot_swap(openai_auth);
+                has_cached_token = true;
+                tracing::info!("auth: adopted OpenAI ChatGPT OAuth credentials for active provider");
+            }
+        }
+
+        if !has_cached_token && init_is_expired {
             let refreshed = self.auth_manager.auth().await.is_ok();
             if refreshed {
                 tracing::debug!(

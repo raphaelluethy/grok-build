@@ -4278,6 +4278,22 @@ pub(crate) fn first_own_credential(
 /// When `env_key` lists multiple names, the first set non-empty value is used.
 pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> ResolvedCredentials {
     let info = model.info();
+
+    // OpenAI ChatGPT OAuth provider: prefer stored Codex credentials and the
+    // model's Codex base URL (already set on builtin openai models).
+    if crate::agent::openai_models::openai_provider_active()
+        || info.base_url.starts_with(crate::auth::provider::OPENAI_CODEX_API_BASE)
+    {
+        if let Some(openai_auth) = load_openai_session_auth() {
+            return ResolvedCredentials {
+                api_key: Some(openai_auth.key),
+                base_url: info.base_url.clone(),
+                auth_type: xai_chat_state::AuthType::SessionToken,
+                auth_scheme: AuthScheme::Bearer,
+            };
+        }
+    }
+
     let (api_key, base_url, auth_type) = if let Some(key) = model.own_credential() {
         (
             Some(key),
@@ -4322,6 +4338,17 @@ pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> Res
         auth_type,
         auth_scheme,
     }
+}
+
+fn load_openai_session_auth() -> Option<crate::auth::GrokAuth> {
+    let path = crate::util::grok_home::grok_home().join("auth.json");
+    let map = crate::auth::read_auth_json(&path).ok()?;
+    crate::auth::provider::lookup_provider_auth(&map, crate::auth::ProviderId::Openai)
+}
+
+/// Startup helper: load OpenAI credentials when that provider is active.
+pub(crate) fn load_openai_auth_for_startup() -> Option<crate::auth::GrokAuth> {
+    load_openai_session_auth()
 }
 /// `disable_api_key_auth` at the credential seam: swap a first-party xAI API
 /// key for the IdP session (absent => request fails => forces login). BYOK
@@ -4607,6 +4634,18 @@ pub fn sampling_config_for_model(
         alpha_test_key.as_deref(),
         &credentials.base_url,
     );
+    // Codex backend requires ChatGPT-Account-Id for org / Plus subscriptions.
+    if credentials
+        .base_url
+        .starts_with(crate::auth::provider::OPENAI_CODEX_API_BASE)
+        && let Some(account_id) = load_openai_session_auth()
+            .and_then(|a| a.chatgpt_account_id)
+            .filter(|s| !s.is_empty())
+    {
+        extra_headers
+            .entry("ChatGPT-Account-Id".to_string())
+            .or_insert(account_id);
+    }
     let api_backend = info.api_backend.clone();
     SamplerConfig {
         api_key: credentials.api_key,

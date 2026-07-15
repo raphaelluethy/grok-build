@@ -1741,15 +1741,75 @@ async fn async_main() -> Result<()> {
                 oauth,
                 device_auth,
                 devbox,
+                provider,
             } => {
                 init_tracing_simple("cli");
                 let _otel_guard = xai_grok_telemetry::otel_layer::otel_guard();
-                let config = xai_grok_shell::config::load_effective_config_disk_only()
-                    .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
-                let config = AgentConfig::new_from_toml_cfg(&config)
-                    .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-                xai_grok_shell::auth::run_cli_login(&config, oauth, device_auth, devbox).await?;
+                let provider_id = provider
+                    .as_deref()
+                    .and_then(xai_grok_shell::auth::ProviderId::parse)
+                    .unwrap_or(xai_grok_shell::auth::ProviderId::Grok);
+                xai_grok_shell::auth::set_active_provider(provider_id)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to set provider: {e}"))?;
+                match provider_id {
+                    xai_grok_shell::auth::ProviderId::Openai => {
+                        let home = xai_grok_shell::util::grok_home::grok_home();
+                        xai_grok_shell::auth::chatgpt::run_chatgpt_login(&home).await?;
+                        println!("Logged in to OpenAI (ChatGPT OAuth).");
+                    }
+                    xai_grok_shell::auth::ProviderId::Grok => {
+                        let config = xai_grok_shell::config::load_effective_config_disk_only()
+                            .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
+                        let config = AgentConfig::new_from_toml_cfg(&config)
+                            .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
+                        xai_grok_shell::auth::run_cli_login(
+                            &config, oauth, device_auth, devbox,
+                        )
+                        .await?;
+                    }
+                }
                 println!();
+                xai_grok_shell::instrumentation::finalize_and_exit(0);
+            }
+            Command::Provider { provider, login } => {
+                init_tracing_simple("cli");
+                if let Some(name) = provider.as_deref() {
+                    let id = xai_grok_shell::auth::ProviderId::parse(name).ok_or_else(|| {
+                        anyhow::anyhow!("Unknown provider '{name}'. Use grok or openai.")
+                    })?;
+                    xai_grok_shell::auth::set_active_provider(id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to set provider: {e}"))?;
+                    println!("Active provider: {}", id.display_name());
+                    if login {
+                        match id {
+                            xai_grok_shell::auth::ProviderId::Openai => {
+                                let home = xai_grok_shell::util::grok_home::grok_home();
+                                xai_grok_shell::auth::chatgpt::run_chatgpt_login(&home).await?;
+                                println!("Logged in to OpenAI (ChatGPT OAuth).");
+                            }
+                            xai_grok_shell::auth::ProviderId::Grok => {
+                                let config =
+                                    xai_grok_shell::config::load_effective_config_disk_only()
+                                        .map_err(|e| {
+                                            anyhow::anyhow!("Failed to load config: {e}")
+                                        })?;
+                                let config = AgentConfig::new_from_toml_cfg(&config)
+                                    .map_err(|e| {
+                                        anyhow::anyhow!("Failed to create agent config: {e}")
+                                    })?;
+                                xai_grok_shell::auth::run_cli_login(
+                                    &config, false, false, false,
+                                )
+                                .await?;
+                            }
+                        }
+                    }
+                } else {
+                    let statuses = xai_grok_shell::auth::provider_statuses(None);
+                    println!("{}", xai_grok_shell::auth::format_provider_status(&statuses));
+                }
                 xai_grok_shell::instrumentation::finalize_and_exit(0);
             }
             Command::Logout => {
