@@ -413,7 +413,7 @@ fn deployment_key_fingerprint(key: &str) -> String {
 }
 
 /// Whether managed config fetching is enabled (env > config.toml > default true).
-/// Callers doing auto-fetch should check this; explicit user actions (grok setup) skip it.
+/// Callers doing auto-fetch should check this; explicit user actions (grog setup) skip it.
 pub fn is_fetch_enabled() -> bool {
     if let Some(v) = crate::agent::config::env_bool("GROK_MANAGED_CONFIG") {
         return v;

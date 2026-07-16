@@ -958,7 +958,7 @@ pub(crate) fn quit_minimal(harness: &mut PtyHarness) {
     }
 }
 
-// ── grok wrap e2e ───────────────────────────────────────────────────────
+// ── grog wrap e2e ───────────────────────────────────────────────────────
 
 /// `grog wrap` run budget. Same contention math as the requirements-version
 /// test: the child's cold exec of the huge debug binary can land its first
@@ -983,7 +983,7 @@ pub(crate) fn run_wrap(wrap_args: &[&str], extra_env: &[(&str, &str)]) -> (Optio
     env.extend_from_slice(extra_env);
 
     let mut harness =
-        PtyHarness::new(&binary, DEFAULT_ROWS, DEFAULT_COLS, &args, &env).expect("spawn grok wrap");
+        PtyHarness::new(&binary, DEFAULT_ROWS, DEFAULT_COLS, &args, &env).expect("spawn grog wrap");
 
     // All wrap e2e children are short-lived; wait for exit, don't gate on text.
     let deadline = Instant::now() + WRAP_TIMEOUT;

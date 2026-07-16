@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Tests for the versioned-binary + symlink installation logic used by
-// postinstall.js and the bin/grok trampoline.
+// postinstall.js and the bin/grog trampoline.
 //
 // Run with:  node scripts/test-postinstall.js
 //
@@ -34,7 +34,7 @@ function cleanup(dir) {
     fs.rmSync(dir, { recursive: true, force: true });
 }
 
-// ─── Extracted logic (mirrors postinstall.js and bin/grok exactly) ─────
+// ─── Extracted logic (mirrors postinstall.js and bin/grog exactly) ─────
 
 /** Semver-aware descending sort for "grok-X.Y.Z" filenames. */
 function semverSortDescending(a, b) {
@@ -86,7 +86,7 @@ function cleanupOldVersions(canonicalDir, currentVersionedName) {
     return versionedBinaries;
 }
 
-/** Bootstrap canonical from vendored (same as bin/grok trampoline). */
+/** Bootstrap canonical from vendored (same as bin/grog trampoline). */
 function bootstrapCanonical(vendoredBinPath, version, canonicalDir) {
     const canonicalPath = path.join(canonicalDir, 'grog');
     try {

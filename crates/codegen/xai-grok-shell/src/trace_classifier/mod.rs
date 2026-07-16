@@ -2353,7 +2353,7 @@ mod tests {
         assert!(
             msg.contains("--api-key")
                 && msg.contains("XAI_API_KEY")
-                && msg.contains("grok login")
+                && msg.contains("grog login")
                 && msg.contains("auth.json"),
             "error names all three sources: {msg}",
         );

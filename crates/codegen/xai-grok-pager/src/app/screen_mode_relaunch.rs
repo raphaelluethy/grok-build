@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn adds_minimal_and_resume() {
-        let out = build_screen_mode_relaunch_args(args(&["grok", "--no-leader"]), "abc", true);
+        let out = build_screen_mode_relaunch_args(args(&["grog", "--no-leader"]), "abc", true);
         assert_eq!(
             as_strs(&out),
             vec!["--no-leader", "--resume", "abc", "--minimal"]
@@ -454,7 +454,7 @@ mod tests {
     /// alone would switch the mode without recording it).
     #[test]
     fn adds_fullscreen_and_resume() {
-        let out = build_screen_mode_relaunch_args(args(&["grok", "--no-leader"]), "abc", false);
+        let out = build_screen_mode_relaunch_args(args(&["grog", "--no-leader"]), "abc", false);
         assert_eq!(
             as_strs(&out),
             vec!["--no-leader", "--resume", "abc", "--fullscreen"]
@@ -469,7 +469,7 @@ mod tests {
     fn strips_session_id_flag() {
         let out = build_screen_mode_relaunch_args(
             args(&[
-                "grok",
+                "grog",
                 "--session-id",
                 "11111111-1111-1111-1111-111111111111",
                 "--no-leader",
@@ -483,7 +483,7 @@ mod tests {
         );
 
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "-s", "11111111-1111-1111-1111-111111111111"]),
+            args(&["grog", "-s", "11111111-1111-1111-1111-111111111111"]),
             "new",
             false,
         );
@@ -497,7 +497,7 @@ mod tests {
     fn strips_worktree_and_restore_code() {
         let out = build_screen_mode_relaunch_args(
             args(&[
-                "grok",
+                "grog",
                 "-w",
                 "feature-x",
                 "--worktree-ref",
@@ -521,7 +521,7 @@ mod tests {
     fn strips_eq_forms_of_one_shot_flags() {
         let out = build_screen_mode_relaunch_args(
             args(&[
-                "grok",
+                "grog",
                 "--session-id=u1",
                 "--worktree=wt",
                 "--worktree-ref=main",
@@ -542,7 +542,7 @@ mod tests {
     #[test]
     fn strips_bare_worktree_without_eating_next_flag() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--worktree", "--no-leader"]),
+            args(&["grog", "--worktree", "--no-leader"]),
             "new",
             false,
         );
@@ -555,7 +555,7 @@ mod tests {
     #[test]
     fn strips_prior_minimal_and_resume() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--minimal", "--resume", "old", "--no-leader"]),
+            args(&["grog", "--minimal", "--resume", "old", "--no-leader"]),
             "new",
             false,
         );
@@ -573,7 +573,7 @@ mod tests {
     #[test]
     fn strips_prior_fullscreen_flag() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--fullscreen", "--resume", "old", "--no-leader"]),
+            args(&["grog", "--fullscreen", "--resume", "old", "--no-leader"]),
             "new",
             true,
         );
@@ -587,7 +587,7 @@ mod tests {
     #[test]
     fn strips_short_resume_and_continue() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "-r", "old", "-c", "--no-leader"]),
+            args(&["grog", "-r", "old", "-c", "--no-leader"]),
             "sid",
             true,
         );
@@ -601,7 +601,7 @@ mod tests {
     #[test]
     fn strips_resume_equals_form() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--resume=old-id", "--no-leader"]),
+            args(&["grog", "--resume=old-id", "--no-leader"]),
             "sid",
             false,
         );
@@ -614,7 +614,7 @@ mod tests {
     #[test]
     fn strips_positional_prompt() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--no-leader", "fix the bug"]),
+            args(&["grog", "--no-leader", "fix the bug"]),
             "sid",
             true,
         );
@@ -631,7 +631,7 @@ mod tests {
         // prompt. The separator itself must go too, or the appended
         // `--resume <id>` would be parsed as positional prompt words.
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--no-leader", "--", "fix the bug"]),
+            args(&["grog", "--no-leader", "--", "fix the bug"]),
             "sid",
             false,
         );
@@ -647,7 +647,7 @@ mod tests {
         // as the bare positional prompt (regression: relaunch argv drops flag values).
         let out = build_screen_mode_relaunch_args(
             args(&[
-                "grok",
+                "grog",
                 "--model",
                 "grok-4",
                 "--cwd",
@@ -685,7 +685,7 @@ mod tests {
     #[test]
     fn keeps_equals_form_and_short_model_flag() {
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "-m", "grok-4", "--cwd=/tmp/proj", "--no-leader"]),
+            args(&["grog", "-m", "grok-4", "--cwd=/tmp/proj", "--no-leader"]),
             "sid",
             false,
         );
@@ -708,7 +708,7 @@ mod tests {
         // `--no-leader` is boolean; the bare word after it is the prompt and
         // must be dropped, not attached as a spurious value.
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--no-leader", "fix the bug"]),
+            args(&["grog", "--no-leader", "fix the bug"]),
             "sid",
             false,
         );
@@ -722,7 +722,7 @@ mod tests {
     fn resume_without_value_then_flag_is_not_eaten() {
         // `grog --resume --no-leader` (resume most-recent; next token is a flag).
         let out = build_screen_mode_relaunch_args(
-            args(&["grok", "--resume", "--no-leader"]),
+            args(&["grog", "--resume", "--no-leader"]),
             "sid",
             false,
         );
@@ -815,11 +815,11 @@ mod tests {
         // like a successful exec would.
         assert_eq!(
             screen_mode_relaunch_resume_hint("abc-sid", false),
-            "GROK_SCREEN_MODE=fullscreen grok --fullscreen --resume abc-sid"
+            "GROK_SCREEN_MODE=fullscreen grog --fullscreen --resume abc-sid"
         );
         assert_eq!(
             screen_mode_relaunch_resume_hint("abc-sid", true),
-            "GROK_SCREEN_MODE=minimal grok --minimal --resume abc-sid"
+            "GROK_SCREEN_MODE=minimal grog --minimal --resume abc-sid"
         );
     }
 

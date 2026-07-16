@@ -649,7 +649,7 @@ pub fn worktree_base_dir(git_root: &Path) -> std::path::PathBuf {
 /// as the main repo root (returning the worktree itself instead of the
 /// original repo).
 ///
-/// For paths outside the grok worktree directory, falls back to
+/// For paths outside the grog worktree directory, falls back to
 /// `find_main_repo_root_from_path` + `worktree_base_dir`.
 pub fn worktree_base_dir_for_source(source_path: &Path) -> Result<std::path::PathBuf> {
     let worktrees_dir = grok_home().join("worktrees");

@@ -6,7 +6,7 @@
 //!
 //! 1. `PAGER_BINARY` env var (set by CI after downloading the release artifact)
 //! 2. `GROK_BINARY` env var (shared convention with the shell crate)
-//! 3. `CARGO_BIN_EXE_xai-grok-pager` (set by `cargo test` for in-tree runs)
+//! 3. `CARGO_BIN_EXE_grog` (set by `cargo test` for in-tree runs)
 //! 4. A locally-built debug binary — built on first run if missing
 //!
 //! The harness (spawn / screen state / frame timing / mock inference server)

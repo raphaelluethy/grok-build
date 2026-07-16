@@ -58,7 +58,7 @@ fn seed_previous_good(home: &Path, version: &str, platform: &str) -> PathBuf {
     std::fs::set_permissions(&prev, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let rel = format!("../downloads/grok-{version}-{platform}");
-    for name in ["grok", "agent"] {
+    for name in ["grog", "agent"] {
         let link = bin.join(name);
         let _ = std::fs::remove_file(&link);
         std::os::unix::fs::symlink(&rel, &link).unwrap();
@@ -80,7 +80,7 @@ enum Expect {
 /// link is always runnable and is never a `.tmp` or a partial file. Applied
 /// to both `grog` and `agent` — `swap_managed_bin_links` moves them together.
 fn assert_invariant(home: &Path, prev_good: &Path, new_binary: &Path, expect: Expect) {
-    for name in ["grok", "agent"] {
+    for name in ["grog", "agent"] {
         assert_link_invariant(home, name, prev_good, new_binary, expect);
     }
 }

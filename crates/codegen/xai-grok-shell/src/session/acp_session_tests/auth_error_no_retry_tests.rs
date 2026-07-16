@@ -398,11 +398,11 @@ async fn legacy_auth_hint_on_404_model_not_found() {
                 "404 with WebLogin must include deprecation message, got: {msg}"
             );
             assert!(
-                msg.contains("grok logout"),
+                msg.contains("grog logout"),
                 "hint must mention `grog logout`, got: {msg}"
             );
             assert!(
-                msg.contains("grok login"),
+                msg.contains("grog login"),
                 "hint must mention `grog login`, got: {msg}"
             );
             assert!(
@@ -467,11 +467,11 @@ async fn legacy_auth_hint_on_401_unauthorized() {
                 "401 with WebLogin must include deprecation message, got: {msg}"
             );
             assert!(
-                msg.contains("grok logout"),
+                msg.contains("grog logout"),
                 "hint must mention `grog logout`, got: {msg}"
             );
             assert!(
-                msg.contains("grok login"),
+                msg.contains("grog login"),
                 "hint must mention `grog login`, got: {msg}"
             );
         })

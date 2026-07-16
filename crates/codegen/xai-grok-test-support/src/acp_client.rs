@@ -1,4 +1,4 @@
-//! ACP stdio clients for testing grok sessions end-to-end: the typed
+//! ACP stdio clients for testing grog sessions end-to-end: the typed
 //! [`GrokStdioClient`] (`agent-client-protocol::ClientSideConnection` —
 //! authentication, session lifecycle, permissions, notification streaming) and
 //! the raw-wire [`RawStdioClient`] (verbatim JSON-RPC lines for shapes the

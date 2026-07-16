@@ -707,7 +707,7 @@ grog -p "Review changes for bugs and security issues." \
   --output-format json --always-approve | jq -r '.text' > review.md
 
 # Pipeline: chain with other tools
-git diff --staged | grok -p "Write a concise commit message for these changes"
+git diff --staged | grog -p "Write a concise commit message for these changes"
 
 # Batch: process multiple files
 for file in src/*.js; do
@@ -816,7 +816,7 @@ class GrokChat:
         self.env = {**os.environ}
 
     def _build_cmd(self, prompt, model, stream):
-        return ["grok", "-p", prompt, "-m", model, "--cwd", self.cwd,
+        return ["grog", "-p", prompt, "-m", model, "--cwd", self.cwd,
                 "--output-format", "streaming-json" if stream else "json", "--always-approve"]
 
     async def create(self, messages, model="grok-build", stream=False):
@@ -920,7 +920,7 @@ class GrokChat {
   }
 
   async *streamResponse(prompt: string, model: string) {
-    const proc = execa("grok", this.buildArgs(prompt, model, true));
+    const proc = execa("grog", this.buildArgs(prompt, model, true));
     for await (const chunk of proc.stdout!) {
       for (const line of chunk.toString().split("\n").filter(Boolean)) {
         const event = JSON.parse(line);
@@ -1099,7 +1099,7 @@ class GrokACPChat {
   constructor(private cwd = ".") {}
 
   async init() {
-    this.proc = spawn("grok", ["agent", "stdio"]);
+    this.proc = spawn("grog", ["agent", "stdio"]);
     this.rl = readline.createInterface({ input: this.proc.stdout! });
 
     // Initialize
@@ -1234,7 +1234,7 @@ Grok implements the [Agent Client Protocol (ACP)](https://agentclientprotocol.co
 └──────────────────┬──────────────────────┘
                    │ JSON-RPC over stdio
 ┌──────────────────▼──────────────────────┐
-│           grok agent stdio              │
+│           grog agent stdio              │
 │                                         │
 │  ┌─────────┐  ┌─────────┐  ┌─────────┐  │
 │  │ Session │  │  Tools  │  │   MCP   │  │
@@ -2423,7 +2423,7 @@ Generate and install:
 
 ```bash
 mkdir -p ~/.local/share/bash-completion/completions
-grog completions bash > ~/.local/share/bash-completion/completions/grok
+grog completions bash > ~/.local/share/bash-completion/completions/grog
 ```
 
 Reload your shell or run `source ~/.bashrc`.
@@ -2432,13 +2432,13 @@ Alternative (Grok-managed location):
 
 ```bash
 mkdir -p ~/.grok/completions/bash
-grog completions bash > ~/.grok/completions/bash/grok.bash
+grog completions bash > ~/.grok/completions/bash/grog.bash
 ```
 
 Add to `~/.bashrc`:
 
 ```bash
-[[ -r "$HOME/.grok/completions/bash/grok.bash" ]] && source "$HOME/.grok/completions/bash/grok.bash"
+[[ -r "$HOME/.grok/completions/bash/grog.bash" ]] && source "$HOME/.grok/completions/bash/grog.bash"
 ```
 
 ### Zsh
@@ -2447,7 +2447,7 @@ Generate and install:
 
 ```bash
 mkdir -p ~/.zsh/completions
-grog completions zsh > ~/.zsh/completions/_grok
+grog completions zsh > ~/.zsh/completions/_grog
 ```
 
 Add to `~/.zshrc`:
@@ -2462,7 +2462,7 @@ Alternative (Grok-managed location):
 
 ```bash
 mkdir -p ~/.grok/completions/zsh
-grog completions zsh > ~/.grok/completions/zsh/_grok
+grog completions zsh > ~/.grok/completions/zsh/_grog
 ```
 
 Add to `~/.zshrc`:

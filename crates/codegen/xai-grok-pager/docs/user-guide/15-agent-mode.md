@@ -86,7 +86,7 @@ Communication follows the JSON-RPC 2.0 format. A typical session lifecycle:
 +-------------------+----------------------+
                     | JSON-RPC over stdio
 +-------------------v----------------------+
-|           grok agent stdio               |
+|           grog agent stdio               |
 |                                          |
 |  +---------+  +---------+  +---------+   |
 |  | Session |  |  Tools  |  |   MCP   |   |
@@ -199,7 +199,7 @@ class GrokACPChat {
   constructor(private cwd = ".") {}
 
   async init() {
-    this.proc = spawn("grok", ["agent", "stdio"]);
+    this.proc = spawn("grog", ["agent", "stdio"]);
     this.rl = readline.createInterface({ input: this.proc.stdout! });
 
     // Initialize

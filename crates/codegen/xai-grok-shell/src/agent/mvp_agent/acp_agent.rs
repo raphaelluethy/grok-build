@@ -1444,7 +1444,7 @@ impl acp::Agent for MvpAgent {
                 target : xai_grok_workspace::session::git::RESTORE_CODE_LOG, session_id =
                 % session_id.0, supplied_cwd = % cwd.as_str(), persisted_cwd = % summary
                 .info.cwd, target_sha = % target_sha,
-                "restore_code: skipping session HEAD checkout — supplied cwd is neither a grok worktree nor the session's persisted cwd (refusing to detach the source repo)"
+                "restore_code: skipping session HEAD checkout — supplied cwd is neither a grog worktree nor the session's persisted cwd (refusing to detach the source repo)"
             );
             xai_grok_telemetry::unified_log::warn(
                 "restore_code: skipped session HEAD checkout (unsafe cwd)",

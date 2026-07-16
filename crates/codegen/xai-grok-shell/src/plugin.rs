@@ -1640,8 +1640,8 @@ mod tests {
             skipped_sources: vec![],
         };
         let msg = err.to_string();
-        assert!(msg.contains("grok plugin install ./sentry"), "{msg}");
-        assert!(msg.contains("grok plugin marketplace add"), "{msg}");
+        assert!(msg.contains("grog plugin install ./sentry"), "{msg}");
+        assert!(msg.contains("grog plugin marketplace add"), "{msg}");
         assert!(!msg.contains("could not be synced"), "{msg}");
     }
 
@@ -1674,7 +1674,7 @@ mod tests {
             "{msg}"
         );
         assert!(
-            msg.contains("grok plugin install sentry@<qualifier>"),
+            msg.contains("grog plugin install sentry@<qualifier>"),
             "{msg}"
         );
     }

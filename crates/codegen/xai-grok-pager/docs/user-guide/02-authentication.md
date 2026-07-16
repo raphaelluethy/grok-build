@@ -199,7 +199,7 @@ echo "{\"access_token\": \"$TOKEN\", \"expires_in\": 3600}"
 For headless environments (SSH sessions, Docker containers, remote VMs) where no browser is available locally:
 
 ```bash
-grog login --device-auth    # or: grok login --device-code
+grog login --device-auth    # or: grog login --device-code
 ```
 
 This prints a URL and code to the terminal. Open the URL on any device, enter the code, and complete authentication. Grok polls until the login is confirmed.
@@ -270,7 +270,7 @@ tail -f /tmp/grok.log
 In headless mode, logs go to stderr. Redirect them to a file:
 
 ```bash
-RUST_LOG=debug grok -p "hello" 2> /tmp/grok.log
+RUST_LOG=debug grog -p "hello" 2> /tmp/grok.log
 ```
 
 ### Common log messages

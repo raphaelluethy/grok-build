@@ -229,7 +229,7 @@ fn trust_prompt(subject: &str, source_arg: &str) -> String {
         "Installing {subject} requires confirmation.\n\
          Plugins can run hooks, MCP servers, and skills on your machine, so installation needs explicit trust.\n\
          \n\
-         To proceed, re-run with --trust:\n  grok plugin install {source_arg} --trust"
+         To proceed, re-run with --trust:\n  grog plugin install {source_arg} --trust"
     )
 }
 
@@ -550,7 +550,7 @@ fn cmd_uninstall(name: &str, confirm: bool, keep_data: bool) -> Result<()> {
             "Plugin \"{name}\" belongs to repo \"{repo_key}\" which also contains:\n\
              {}\n\n\
              Uninstalling will remove all {total} plugin(s). To proceed:\n\
-               grok plugin uninstall {name} --confirm",
+               grog plugin uninstall {name} --confirm",
             other_plugins
                 .iter()
                 .map(|p| format!("  - {p}"))
@@ -1089,7 +1089,7 @@ mod tests {
         );
         assert!(msg.contains("hooks, MCP servers, and skills"));
         assert!(msg.contains(
-            "To proceed, re-run with --trust:\n  grok plugin install sentry@xai-org/plugin-marketplace --trust"
+            "To proceed, re-run with --trust:\n  grog plugin install sentry@xai-org/plugin-marketplace --trust"
         ));
         assert!(!msg.contains("Error"));
         assert!(!msg.contains("Failed"));
@@ -1105,7 +1105,7 @@ mod tests {
             ),
             "{git}"
         );
-        assert!(git.ends_with("  grok plugin install u/r --trust"), "{git}");
+        assert!(git.ends_with("  grog plugin install u/r --trust"), "{git}");
         let local = trust_prompt("from directory /tmp/p", "./p");
         assert!(
             local.starts_with("Installing from directory /tmp/p requires confirmation."),

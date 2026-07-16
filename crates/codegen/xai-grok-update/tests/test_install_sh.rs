@@ -3,7 +3,7 @@
 //! `curl` that can serve the good artifact, truncate it, or serve a right-length
 //! garbage body, and asserts the same invariant as the Rust blitz:
 //!
-//! > After any install attempt, `$BIN_DIR/grok` resolves to a binary that runs,
+//! > After any install attempt, `$BIN_DIR/grog` resolves to a binary that runs,
 //! > OR is still the previous-good binary — never a partial/garbage binary.
 //!
 //! Also covers shell-rc rewrite: stowed/symlinked `~/.bashrc` etc. must survive
@@ -105,7 +105,7 @@ fn seed_previous_good(home: &Path, platform: &str) -> PathBuf {
     dunce::canonicalize(&prev).unwrap()
 }
 
-/// Re-resolve `$BIN_DIR/grok` from disk and re-run it: the active grok must
+/// Re-resolve `$BIN_DIR/grog` from disk and re-run it: the active grog must
 /// always execute, and never be a `.tmp`/partial file.
 fn assert_active_grok_runs(home: &Path) {
     let link = home.join(".grok").join("bin").join("grog");
@@ -115,14 +115,14 @@ fn assert_active_grok_runs(home: &Path) {
     let name = resolved.file_name().unwrap().to_string_lossy().to_string();
     assert!(
         !name.contains(".tmp"),
-        "active grok must not be a temp file: {name}"
+        "active grog must not be a temp file: {name}"
     );
     let ok = Command::new(&resolved)
         .arg("--version")
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    assert!(ok, "active grok must run: {}", resolved.display());
+    assert!(ok, "active grog must run: {}", resolved.display());
 }
 
 fn run_installer(install_sh: &Path, home: &Path, fakebin: &Path, mode: &str, shell: &str) -> bool {

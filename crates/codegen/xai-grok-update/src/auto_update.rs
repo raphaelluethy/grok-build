@@ -586,7 +586,7 @@ pub async fn run_update_if_available(
     Ok(false)
 }
 
-/// Launch "grok update" in blocking or non-blocking mode.
+/// Launch "grog update" in blocking or non-blocking mode.
 ///
 /// In `NonBlocking` mode the spawned child's handle is returned so the caller
 /// can later `wait()` on the in-flight download (e.g. the TUI's
@@ -617,7 +617,7 @@ async fn run_update_subcommand(run_mode: UpdateRunMode) -> Result<Option<tokio::
             // No detach: the child must stay in the foreground process group so Ctrl+C cancels it with the parent; the atomic install protocol makes mid-download kills safe.
             let status = cmd.status().await?;
             if !status.success() {
-                anyhow::bail!("grok update failed with {}", status);
+                anyhow::bail!("grog update failed with {}", status);
             }
             Ok(None)
         }
@@ -1698,7 +1698,7 @@ async fn windows_replace_exe(src: &std::path::Path, dest: &std::path::Path) -> R
     rename_result.map_err(|e| {
         anyhow::anyhow!(
             "cannot rename locked executable {}: {e}\n\
-             Close all running grok sessions and retry.",
+             Close all running grog sessions and retry.",
             dest.display(),
         )
     })?;
@@ -2029,7 +2029,7 @@ fn create_temp_npmrc(npm_registry: Option<&str>) -> Result<Option<std::path::Pat
     Ok(None)
 }
 
-/// Check if other grok processes are running (macOS only).
+/// Check if other grog processes are running (macOS only).
 ///
 /// On macOS, `npm i -g` replaces the vendored binary in node_modules in-place.
 /// Any grok process running from that vendored path will be SIGKILL'd by the
@@ -2058,12 +2058,12 @@ fn warn_if_other_grok_processes_running() {
             .collect();
         if !other_pids.is_empty() {
             eprintln!(
-                "  ⚠ Warning: {} other grok process(es) detected.",
+                "  ⚠ Warning: {} other grog process(es) detected.",
                 other_pids.len()
             );
             eprintln!("    Processes running from the npm vendored binary path may be");
             eprintln!("    killed by macOS when npm replaces the package files.");
-            eprintln!("    Consider closing other grok sessions before updating.");
+            eprintln!("    Consider closing other grog sessions before updating.");
             eprintln!();
         }
     }

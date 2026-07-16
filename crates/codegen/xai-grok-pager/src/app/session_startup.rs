@@ -707,14 +707,14 @@ mod tests {
     #[test]
     fn intent_default_is_new_auto() {
         assert_eq!(
-            parse(&["grok"]).session_startup_intent().unwrap(),
+            parse(&["grog"]).session_startup_intent().unwrap(),
             SessionStartupIntent::NewAuto
         );
     }
     #[test]
     fn intent_resume_id() {
         assert_eq!(
-            parse(&["grok", "--resume", "abc"])
+            parse(&["grog", "--resume", "abc"])
                 .session_startup_intent()
                 .unwrap(),
             SessionStartupIntent::Resume {
@@ -726,7 +726,7 @@ mod tests {
     #[test]
     fn intent_resume_empty_is_most_recent() {
         assert_eq!(
-            parse(&["grok", "--resume"])
+            parse(&["grog", "--resume"])
                 .session_startup_intent()
                 .unwrap(),
             SessionStartupIntent::Resume {
@@ -738,7 +738,7 @@ mod tests {
     #[test]
     fn intent_continue() {
         assert_eq!(
-            parse(&["grok", "-c"]).session_startup_intent().unwrap(),
+            parse(&["grog", "-c"]).session_startup_intent().unwrap(),
             SessionStartupIntent::Resume {
                 session_id: None,
                 most_recent_for_cwd: true,
@@ -748,7 +748,7 @@ mod tests {
     #[test]
     fn intent_session_id_alone_is_new_with_id() {
         assert_eq!(
-            parse(&["grok", "--session-id", "my-id"])
+            parse(&["grog", "--session-id", "my-id"])
                 .session_startup_intent()
                 .unwrap(),
             SessionStartupIntent::NewWithId {
@@ -758,7 +758,7 @@ mod tests {
     }
     #[test]
     fn intent_session_id_with_resume_without_fork_errors() {
-        let err = parse(&["grok", "-r", "a", "-s", "b"])
+        let err = parse(&["grog", "-r", "a", "-s", "b"])
             .session_startup_intent()
             .unwrap_err();
         assert_eq!(err, StartupFlagError::SessionIdRequiresFork);
@@ -766,7 +766,7 @@ mod tests {
     #[test]
     fn intent_fork_with_resume() {
         assert_eq!(
-            parse(&["grok", "-r", "old", "--fork-session"])
+            parse(&["grog", "-r", "old", "--fork-session"])
                 .session_startup_intent()
                 .unwrap(),
             SessionStartupIntent::ForkFrom {
@@ -779,7 +779,7 @@ mod tests {
     #[test]
     fn intent_fork_with_resume_and_new_id() {
         assert_eq!(
-            parse(&["grok", "-r", "old", "--fork-session", "-s", "new"])
+            parse(&["grog", "-r", "old", "--fork-session", "-s", "new"])
                 .session_startup_intent()
                 .unwrap(),
             SessionStartupIntent::ForkFrom {
@@ -791,21 +791,21 @@ mod tests {
     }
     #[test]
     fn intent_fork_alone_errors() {
-        let err = parse(&["grok", "--fork-session"])
+        let err = parse(&["grog", "--fork-session"])
             .session_startup_intent()
             .unwrap_err();
         assert_eq!(err, StartupFlagError::ForkRequiresResumeOrContinue);
     }
     #[test]
     fn intent_fork_with_worktree_errors() {
-        let err = parse(&["grok", "-r", "a", "--fork-session", "-w"])
+        let err = parse(&["grog", "-r", "a", "--fork-session", "-w"])
             .session_startup_intent()
             .unwrap_err();
         assert_eq!(err, StartupFlagError::ForkWithWorktree);
     }
     #[test]
     fn intent_from_flags_matches_pager_args() {
-        let args = parse(&["grok", "-r", "old", "--fork-session", "-s", "new"]);
+        let args = parse(&["grog", "-r", "old", "--fork-session", "-s", "new"]);
         let from_flags = session_startup_intent_from_flags(SessionStartupFlags {
             session_id: Some("new"),
             resume_session_id: Some("old"),
@@ -906,7 +906,7 @@ mod tests {
     }
     #[test]
     fn materialize_ctx_chat_mode_from_args() {
-        assert!(!MaterializeCtx::from_pager_args(&parse(&["grok"])).chat_mode);
+        assert!(!MaterializeCtx::from_pager_args(&parse(&["grog"])).chat_mode);
     }
     /// Explicit-id resume under `--chat` passes the id through untouched:
     /// no disk resolution, no GCS restore (the cwd does not even exist).

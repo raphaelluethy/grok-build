@@ -3746,7 +3746,7 @@ mod tests {
             skipped
                 .iter()
                 .any(|s| s.rule.contains("dontask") || s.rule.contains("defaultMode=")),
-            "typo should be recorded for grok inspect"
+            "typo should be recorded for grog inspect"
         );
     }
 

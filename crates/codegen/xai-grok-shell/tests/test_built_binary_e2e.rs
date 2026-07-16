@@ -141,7 +141,7 @@ async fn test_version_exits_zero() {
 
     assert!(
         output.status.success(),
-        "grok --version failed (exit {:?}):\n{}",
+        "grog--version failed (exit {:?}):\n{}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -162,7 +162,7 @@ async fn test_version_with_crash_handler_exits_zero() {
 
     assert!(
         output.status.success(),
-        "grok --version with GROK_CRASH_HANDLER=1 failed (exit {:?}):\n{}",
+        "grog--version with GROK_CRASH_HANDLER=1 failed (exit {:?}):\n{}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -183,7 +183,7 @@ async fn test_headless_session_in_git_repo() {
     let workdir = git_workdir();
     let result = run_headless(&server, &["-p", "say hello", "--yolo"], workdir.path()).await;
 
-    assert_headless_success(&result, "grok -p in git repo", Some(&server));
+    assert_headless_success(&result, "grog-p in git repo", Some(&server));
     assert_no_crashes(&result.stderr);
     assert!(
         server.request_count() > 0,
@@ -210,7 +210,7 @@ async fn test_headless_session_in_non_git_dir() {
 
     let result = run_headless(&server, &["-p", "say hello", "--yolo"], workdir.path()).await;
 
-    assert_headless_success(&result, "grok -p in non-git dir", Some(&server));
+    assert_headless_success(&result, "grog-p in non-git dir", Some(&server));
     assert_no_crashes(&result.stderr);
 }
 
@@ -235,7 +235,7 @@ async fn test_headless_tools_allowlist_keeps_enabled_web_tools() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p --tools with web tools", Some(&server));
+    assert_headless_success(&result, "grog-p --tools with web tools", Some(&server));
     assert_no_crashes(&result.stderr);
     let names = inference_tool_names(&server);
     for expected in ["read_file", "grep", "list_dir", "web_search", "web_fetch"] {
@@ -298,7 +298,7 @@ async fn test_headless_tools_allowlist_does_not_fail_open_for_disabled_web_fetch
 
     assert_headless_success(
         &result,
-        "grok -p --tools with disabled web_fetch",
+        "grog-p --tools with disabled web_fetch",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -325,7 +325,7 @@ async fn test_headless_terminal_only_allowlist_is_foreground_only() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p --tools run_terminal_cmd", Some(&server));
+    assert_headless_success(&result, "grog-p --tools run_terminal_cmd", Some(&server));
     assert_no_crashes(&result.stderr);
     let request = inference_request(&server);
     let terminal = request["tools"]
@@ -421,7 +421,7 @@ async fn test_headless_streaming_json_output() {
 
     assert_headless_success(
         &result,
-        "grok -p --output-format streaming-json",
+        "grog-p --output-format streaming-json",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -508,7 +508,7 @@ async fn test_headless_json_reports_server_cost() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p (scripted cost)", Some(&server));
+    assert_headless_success(&result, "grog-p (scripted cost)", Some(&server));
     let output = parse_stdout_json(&result);
     assert_eq!(output["total_cost_usd"], 0.12345);
     assert_eq!(output["total_cost_usd_ticks"], 1_234_500_000_i64);
@@ -627,7 +627,7 @@ async fn headless_json_schema_chat_completions_uses_response_format() {
 
     assert_headless_success(
         &result,
-        "grok -p --json-schema (chat_completions)",
+        "grog-p --json-schema (chat_completions)",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -684,7 +684,7 @@ async fn headless_json_schema_responses_uses_text_format() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p --json-schema (responses)", Some(&server));
+    assert_headless_success(&result, "grog-p --json-schema (responses)", Some(&server));
     assert_no_crashes(&result.stderr);
 
     let output = parse_stdout_json(&result);
@@ -740,7 +740,7 @@ async fn headless_json_schema_messages_backend_uses_structured_output_tool() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p --json-schema (messages)", Some(&server));
+    assert_headless_success(&result, "grog-p --json-schema (messages)", Some(&server));
     assert_no_crashes(&result.stderr);
 
     let output = parse_stdout_json(&result);
@@ -824,7 +824,7 @@ async fn headless_json_schema_messages_validates_text_when_tool_not_called() {
 
     assert_headless_success(
         &result,
-        "grok -p --json-schema (messages, text)",
+        "grog-p --json-schema (messages, text)",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -871,7 +871,7 @@ async fn headless_json_schema_messages_retries_on_schema_violation() {
 
     assert_headless_success(
         &result,
-        "grok -p --json-schema (messages, retry)",
+        "grog-p --json-schema (messages, retry)",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -912,7 +912,7 @@ async fn invalid_json_schema_disables_structured_output_and_surfaces_error() {
 
     assert_headless_success(
         &result,
-        "grok -p --json-schema (invalid schema)",
+        "grog-p --json-schema (invalid schema)",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -950,7 +950,7 @@ async fn invalid_json_schema_disables_structured_output_and_surfaces_error() {
 }
 
 // ============================================================================
-// ACP stdio tests (grok agent stdio)
+// ACP stdio tests (grog agent stdio)
 //
 // These test the agent as a server: spawn `grog agent stdio`, speak the full
 // ACP protocol over pipes, verify the lifecycle works end-to-end.
@@ -1398,7 +1398,7 @@ async fn headless_reasoning_efforts_payload_parses_and_legacy_effort_rides_wire(
     )
     .await;
 
-    assert_headless_success(&result, "grok -p reasoning_efforts list", Some(&server));
+    assert_headless_success(&result, "grog-p reasoning_efforts list", Some(&server));
     assert_no_crashes(&result.stderr);
 
     // The legacy effort scalar rides the chat-completions request unchanged.
@@ -1527,7 +1527,7 @@ async fn test_headless_timeout_exit_kills_pending_background_task() {
 
     assert_headless_success(
         &result,
-        "grok -p with pending background task",
+        "grog-p with pending background task",
         Some(&server),
     );
     assert_no_crashes(&result.stderr);
@@ -1565,7 +1565,7 @@ async fn test_headless_no_wait_exit_kills_background_task() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p --no-wait-for-background", Some(&server));
+    assert_headless_success(&result, "grog-p --no-wait-for-background", Some(&server));
     assert_no_crashes(&result.stderr);
 
     let pid = read_task_pid(&pid_file);
@@ -1630,7 +1630,7 @@ async fn test_headless_waits_for_short_background_task_and_exits_clean() {
     )
     .await;
 
-    assert_headless_success(&result, "grok -p with short background task", Some(&server));
+    assert_headless_success(&result, "grog-p with short background task", Some(&server));
     assert_no_crashes(&result.stderr);
     assert!(
         marker.exists(),

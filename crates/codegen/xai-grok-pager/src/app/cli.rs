@@ -85,8 +85,8 @@ clipboard (containers, SSH) and your terminal does not handle OSC 52 itself
 sync with your window size.
 
 Examples:
-  grok wrap docker exec -it my-container bash
-  grok wrap kubectl exec -it my-pod -- bash
+  grog wrap docker exec -it my-container bash
+  grog wrap kubectl exec -it my-pod -- bash
 
 See ~/.grok/README.md for more information.
 ")]

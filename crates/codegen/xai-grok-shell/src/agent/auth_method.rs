@@ -919,7 +919,7 @@ mod tests {
         assert_eq!(read_xai_api_key_env().unwrap(), "new-key");
     }
 
-    // -- grok login --legacy regression coverage ------------------------
+    // -- grog login --legacy regression coverage ------------------------
     //
     // `grog login --legacy` produces a GrokAuth with `auth_mode: WebLogin`,
     // `oidc_issuer: None`, and no `expires_at` (30-day hardcoded TTL).

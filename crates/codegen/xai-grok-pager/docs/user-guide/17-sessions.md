@@ -228,7 +228,7 @@ The agent persists all session updates automatically. Clients can reconnect and 
 
 ---
 
-## The grok sessions Subcommand
+## The grog sessions Subcommand
 
 List or search sessions from the command line. `grog sessions` requires a subcommand:
 

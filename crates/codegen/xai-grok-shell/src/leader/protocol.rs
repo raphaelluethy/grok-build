@@ -108,10 +108,10 @@ impl Default for ClientId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClientMode {
-    /// Headless mode (grok agent, grok agent headless) - uses websocket relay.
+    /// Headless mode (grog agent, grog agent headless) - uses websocket relay.
     /// Leader connects to websocket relay once and forwards messages.
     Headless,
-    /// Stdio mode (grok agent stdio, grok -p) - uses local IPC.
+    /// Stdio mode (grog agent stdio, grog -p) - uses local IPC.
     /// Client sends/receives ACP messages directly via IPC.
     Stdio,
 }

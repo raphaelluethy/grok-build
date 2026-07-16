@@ -338,7 +338,7 @@ pub fn discover_plugins(
     }
 
     // 4-5. User plugins: $GROK_HOME/plugins, legacy ~/.grok/plugins, ~/.claude/plugins.
-    // Gate the grok plugins dir on user_grok_home() so a project's .grok/plugins
+    // Gate the grog plugins dir on user_grok_home() so a project's .grok/plugins
     // is never scanned as user-global when no home resolves.
     let grok = xai_grok_config::user_grok_home();
     let plugin_dirs = user_plugin_dirs(dirs::home_dir().as_deref(), grok.as_deref());

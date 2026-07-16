@@ -56,7 +56,7 @@ fn assert_active_binary(home: &Path, version: &str, platform: &str, expected_con
     assert_eq!(
         resolved.file_name().unwrap().to_string_lossy(),
         format!("grok-{version}-{platform}"),
-        "active grok must be the expected version"
+        "active grog must be the expected version"
     );
     assert_eq!(
         std::fs::read(&resolved).unwrap(),
@@ -72,7 +72,7 @@ fn assert_active_binary(home: &Path, version: &str, platform: &str, expected_con
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    assert!(ran_ok, "active grok must pass the smoke-test");
+    assert!(ran_ok, "active grog must pass the smoke-test");
 }
 
 /// Lay down a managed-install layout in the test GROK_HOME:
@@ -490,7 +490,7 @@ async fn concurrent_different_version_installs_do_not_corrupt_each_other() {
     let name = resolved.file_name().unwrap().to_string_lossy().to_string();
     assert!(
         !name.contains(".tmp"),
-        "active grok must never be a temp file: {name}"
+        "active grog must never be a temp file: {name}"
     );
 
     // No stray shared temp file left behind (the pre-fix collision name).

@@ -145,7 +145,7 @@ async fn debug_flag_enables_firehose_without_crashing() {
     let cmd = debug_cmd(&server, home.path(), workdir.path(), &["--debug"]);
     let result = run_headless_with_cmd(cmd).await;
 
-    assert_headless_success(&result, "grok --debug headless", Some(&server));
+    assert_headless_success(&result, "grog --debug headless", Some(&server));
     assert_no_crashes(&result.stderr);
 }
 
@@ -162,7 +162,7 @@ async fn no_debug_flag_writes_no_debug_dir() {
     let cmd = debug_cmd(&server, home.path(), workdir.path(), &[]);
     let result = run_headless_with_cmd(cmd).await;
 
-    assert_headless_success(&result, "grok headless (no --debug)", Some(&server));
+    assert_headless_success(&result, "grog headless (no --debug)", Some(&server));
     assert!(
         firehose_txt_files(home.path()).is_empty(),
         "no firehose *.txt expected without --debug, found: {:?}",
@@ -292,7 +292,7 @@ async fn debug_file_flag_writes_single_file_and_bypasses_routing() {
     );
     let result = run_headless_with_cmd(cmd).await;
 
-    assert_headless_success(&result, "grok --debug-file", Some(&server));
+    assert_headless_success(&result, "grog --debug-file", Some(&server));
     assert_no_crashes(&result.stderr);
     assert!(
         explicit.exists(),

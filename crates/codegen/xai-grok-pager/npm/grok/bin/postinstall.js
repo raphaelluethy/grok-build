@@ -116,7 +116,7 @@ function installBinary(binName, sourceDir, vendorSubpath) {
                 }
             } catch (e2) {
                 console.error(`@xai-official/grok: failed to update ${canonicalPath}: ${e2.message}`);
-                console.error('Close all running grok processes and try again.');
+                console.error('Close all running grog processes and try again.');
                 return false;
             }
         }
@@ -204,13 +204,13 @@ fs.writeFileSync(configPath, TOML.stringify(obj), 'utf8');
 
 // Shell completions: print setup hints (no silent shell config mutation).
 // Set GROK_INSTALL_COMPLETIONS=1 to auto-generate to ~/.grok/completions.
-const GROK_PATH = path.join(CANONICAL_DIR, `grok${EXE}`);
+const GROK_PATH = path.join(CANONICAL_DIR, `grog${EXE}`);
 if (process.env.GROK_INSTALL_COMPLETIONS === '1' && !IS_WINDOWS) {
     try {
         const { spawnSync } = require('child_process');
         const completionsDir = path.join(os.homedir(), '.grok', 'completions');
-        const bashPath = path.join(completionsDir, 'bash', 'grok.bash');
-        const zshPath = path.join(completionsDir, 'zsh', '_grok');
+        const bashPath = path.join(completionsDir, 'bash', 'grog.bash');
+        const zshPath = path.join(completionsDir, 'zsh', '_grog');
         fs.mkdirSync(path.dirname(bashPath), { recursive: true });
         fs.mkdirSync(path.dirname(zshPath), { recursive: true });
         const bashRes = spawnSync(GROK_PATH, ['completions', 'bash'], { encoding: 'utf8' });
@@ -221,5 +221,5 @@ if (process.env.GROK_INSTALL_COMPLETIONS === '1' && !IS_WINDOWS) {
     } catch {}
 } else if (!IS_WINDOWS) {
     console.log('Tip: grog completions bash > ~/.local/share/bash-completion/completions/grog');
-    console.log('     grok completions zsh  > ~/.zsh/completions/_grok');
+    console.log('     grog completions zsh  > ~/.zsh/completions/_grog');
 }

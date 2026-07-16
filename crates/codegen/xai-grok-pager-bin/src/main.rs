@@ -162,7 +162,7 @@ async fn run_setup_command(json: bool) {
         } else {
             eprintln!("  $env:GROK_DEPLOYMENT_KEY=\"<your-key>\"");
         }
-        eprintln!("  grok setup");
+        eprintln!("  grog setup");
         eprintln!();
         eprintln!("Or add the key to ~/.grok/config.toml:");
         eprintln!();

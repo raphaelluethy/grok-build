@@ -387,7 +387,7 @@ fn git_derived_workspace_key(cwd: &Path) -> PathBuf {
     // can't link) collapses onto its recorded source repo so trust is shared.
     if let Some(source_repo) = crate::worktree::source_repo_for_cwd(&cwd.to_string_lossy()) {
         // Key on the source repo's git ROOT so every worktree of one repo shares
-        // ONE key regardless of the subdir grok -w was launched from (parity with
+        // ONE key regardless of the subdir grog -w was launched from (parity with
         // the git-topology branch below). Fall back to the recorded path when the
         // source repo is gone (deleted-source standalone worktrees still work).
         let root = git2::Repository::discover(&source_repo)
@@ -1490,7 +1490,7 @@ mod tests {
         assert_eq!(
             workspace_key(&wt),
             expected,
-            "a standalone grok worktree must collapse onto its recorded source repo"
+            "a standalone grog worktree must collapse onto its recorded source repo"
         );
         // A cwd nested below the worktree root collapses onto the same key (the
         // registry walk ascends to the registered worktree).

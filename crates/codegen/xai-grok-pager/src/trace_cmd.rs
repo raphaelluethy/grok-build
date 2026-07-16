@@ -562,7 +562,7 @@ impl UploadAttempt<'_> {
             eprintln!("Trace upload failed: {error}");
             eprintln!("  Bundle: {}", export_path.display());
             eprintln!("  Log:    {}", log_path.display());
-            eprintln!("  Retry:  grok trace {}", self.session_id);
+            eprintln!("  Retry:  grog trace {}", self.session_id);
             println!("{}", export_path.display());
         }
 

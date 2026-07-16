@@ -3223,7 +3223,7 @@ fn fresh_tool_model_rejects_unknown_and_nonavailable_entries() {
             format!("Unknown Task.model slug '{requested}'. Valid model slugs: alpha, zeta. \
                      Omit `model` to inherit the parent model.")
         );
-        assert!(! error.contains("grok models"));
+        assert!(! error.contains("grog models"));
     }
     assert!(
         super::handle_request::task_model_override_error(Some("oauth-only"),

@@ -482,8 +482,8 @@ mod tests {
             let data = acp_err.data.unwrap();
             let msg = data.as_str().unwrap();
             assert!(
-                msg.contains("grok logout"),
-                "should suggest grok logout when API key is available: {msg}"
+                msg.contains("grog logout"),
+                "should suggest grog logout when API key is available: {msg}"
             );
             assert!(
                 msg.contains("/logout"),
@@ -507,7 +507,7 @@ mod tests {
             let data = acp_err.data.unwrap();
             let msg = data.as_str().unwrap();
             assert!(
-                !msg.contains("grok logout"),
+                !msg.contains("grog logout"),
                 "should NOT suggest logout when no API key is available: {msg}"
             );
         });
@@ -528,7 +528,7 @@ mod tests {
             let data = acp_err.data.unwrap();
             let msg = data.as_str().unwrap();
             assert!(
-                !msg.contains("grok logout"),
+                !msg.contains("grog logout"),
                 "should NOT suggest logout for non-subscription 403: {msg}"
             );
         });

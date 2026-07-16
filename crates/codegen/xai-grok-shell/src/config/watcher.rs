@@ -752,7 +752,7 @@ mod tests {
 
     /// A write to `<grok_home>/models_cache.json` must surface as
     /// `ConfigChangeEvent::ModelsCacheChanged` so a long-running leader can
-    /// hot-load a catalog fetched by another grok process.
+    /// hot-load a catalog fetched by another grog process.
     #[test]
     #[cfg_attr(
         target_os = "macos",
