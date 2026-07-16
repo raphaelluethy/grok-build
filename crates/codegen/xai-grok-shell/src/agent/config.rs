@@ -2052,6 +2052,10 @@ impl Config {
         self.resolve_two_pass_compaction().value
     }
     pub(crate) fn resolve_telemetry_mode(&self) -> Resolved<TelemetryMode> {
+        // Fork policy: product telemetry / Mixpanel never leave the machine.
+        if crate::privacy::optional_uploads_disabled() {
+            return Resolved::new(TelemetryMode::Disabled, ConfigSource::Default);
+        }
         if let Some(mode) = self.requirements.telemetry.pinned() {
             return Resolved::new(mode, ConfigSource::Requirement);
         }
@@ -2074,6 +2078,10 @@ impl Config {
         Resolved::new(TelemetryMode::Disabled, ConfigSource::Default)
     }
     pub(crate) fn resolve_trace_upload(&self) -> Resolved<bool> {
+        // Fork policy: never upload prompt traces, images, session archives, etc.
+        if crate::privacy::optional_uploads_disabled() {
+            return Resolved::new(false, ConfigSource::Default);
+        }
         let mode = self.resolve_telemetry_mode();
         let ff = if mode.value.is_disabled() {
             None
@@ -2140,6 +2148,10 @@ impl Config {
         )
     }
     pub(crate) fn resolve_feedback(&self) -> Resolved<bool> {
+        // Fork policy: no feedback / turn-delta / signal sync to remote.
+        if crate::privacy::optional_uploads_disabled() {
+            return Resolved::new(false, ConfigSource::Default);
+        }
         let ff = self
             .remote_settings
             .as_ref()
@@ -2891,6 +2903,9 @@ impl SyncBoolFlag {
 /// Sync slice of [`Config::resolve_telemetry_mode`] for use before the tokio
 /// runtime (e.g. `init_sentry`). `true` only when explicitly off.
 pub fn is_telemetry_disabled_sync() -> bool {
+    if crate::privacy::optional_uploads_disabled() {
+        return true;
+    }
     !SyncBoolFlag::new(telemetry_enabled_from_toml)
         .disable_env("DISABLE_TELEMETRY")
         .enable_env(grok_telemetry_env_enabled)
@@ -2900,6 +2915,9 @@ pub fn is_telemetry_disabled_sync() -> bool {
 /// *explicitly* off; absence is not disabled (`.default(true)`) so remote-only
 /// enablement still builds the OTLP exporter (the runtime gate then governs it).
 pub fn is_telemetry_explicitly_disabled_sync() -> bool {
+    if crate::privacy::optional_uploads_disabled() {
+        return true;
+    }
     !SyncBoolFlag::new(telemetry_enabled_from_toml)
         .disable_env("DISABLE_TELEMETRY")
         .enable_env(grok_telemetry_env_enabled)
@@ -2909,6 +2927,9 @@ pub fn is_telemetry_explicitly_disabled_sync() -> bool {
 /// Sync sibling of [`is_telemetry_disabled_sync`] scoped to Sentry. Inherits
 /// from telemetry when no Sentry-specific signal is set.
 pub fn is_error_reporting_disabled_sync() -> bool {
+    if crate::privacy::optional_uploads_disabled() {
+        return true;
+    }
     !SyncBoolFlag::new(error_reporting_enabled_from_toml)
         .disable_env("DISABLE_ERROR_REPORTING")
         .enable_env(|| env_bool("GROK_ERROR_REPORTING"))
@@ -2993,6 +3014,11 @@ pub(crate) fn external_otel_master_switch_from(
 pub fn resolve_external_otel_config(
     client: xai_grok_telemetry::external::config::ExternalClientInfo,
 ) -> Option<xai_grok_telemetry::external::ExternalOtelConfig> {
+    // Fork policy: never stand up a customer/external OTEL exporter.
+    if crate::privacy::optional_uploads_disabled() {
+        let _ = client;
+        return None;
+    }
     resolve_external_otel_config_with(
         crate::config::load_effective_config().ok().as_ref(),
         xai_grok_config::load_merged_requirements().as_ref(),
@@ -7851,7 +7877,8 @@ reasoning_effort = "low"
         unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
         let cfg = Config::default();
         let r = cfg.resolve_feedback();
-        assert!(r.value, "feedback should be true by default");
+        // Fork privacy policy forces feedback off.
+        assert!(!r.value, "feedback permanently disabled in this fork");
         assert_eq!(r.source, ConfigSource::Default);
     }
     #[test]
@@ -8082,8 +8109,9 @@ reasoning_effort = "low"
             ..Default::default()
         });
         let r = cfg.resolve_feedback();
-        assert_eq!(r.source, ConfigSource::Env);
-        assert!(r.value);
+        // Fork privacy policy ignores env/config/remote enablement.
+        assert!(!r.value);
+        assert_eq!(r.source, ConfigSource::Default);
         unsafe { std::env::remove_var("GROK_FEEDBACK_ENABLED") };
     }
     #[test]
@@ -8097,8 +8125,8 @@ reasoning_effort = "low"
             ..Default::default()
         });
         let r = cfg.resolve_feedback();
-        assert_eq!(r.source, ConfigSource::Config);
-        assert!(r.value);
+        assert!(!r.value);
+        assert_eq!(r.source, ConfigSource::Default);
     }
     #[test]
     #[serial]
@@ -8112,8 +8140,8 @@ reasoning_effort = "low"
             ..Default::default()
         };
         let r = cfg.resolve_feedback();
-        assert_eq!(r.source, ConfigSource::Remote);
-        assert!(r.value);
+        assert!(!r.value);
+        assert_eq!(r.source, ConfigSource::Default);
     }
     #[test]
     #[serial]
@@ -8127,7 +8155,7 @@ reasoning_effort = "low"
             ..Default::default()
         });
         let r = cfg.resolve_trace_upload();
-        assert!(!r.value, "telemetry off must force trace upload off");
+        assert!(!r.value, "fork privacy policy forces trace upload off");
         assert!(!cfg.is_trace_upload_enabled());
     }
     #[test]
@@ -8139,16 +8167,14 @@ reasoning_effort = "low"
         cfg.features.telemetry = Some(TelemetryMode::Disabled);
         cfg.telemetry.trace_upload = Some(true);
         let r = cfg.resolve_trace_upload();
-        assert!(
-            r.value,
-            "explicit trace_upload config wins over telemetry off"
-        );
-        assert_eq!(r.source, ConfigSource::Config);
+        // Fork privacy policy: even explicit config cannot enable uploads.
+        assert!(!r.value);
+        assert_eq!(r.source, ConfigSource::Default);
         cfg.telemetry.trace_upload = None;
         cfg.requirements
             .trace_upload
             .pin(true, crate::config::RequirementSource::Unknown);
-        assert!(cfg.resolve_trace_upload().value);
+        assert!(!cfg.resolve_trace_upload().value);
     }
     #[test]
     #[serial]
@@ -8169,8 +8195,9 @@ reasoning_effort = "low"
         assert_eq!(d["has_remote_settings"], serde_json::json!(true));
         cfg.telemetry.trace_upload = Some(true);
         let d = cfg.trace_upload_decision_debug();
-        assert_eq!(d["trace_upload"], serde_json::json!(true));
-        assert_eq!(d["trace_upload_source"], serde_json::json!("config"));
+        // Fork policy keeps uploads off even when config requests them.
+        assert_eq!(d["trace_upload"], serde_json::json!(false));
+        assert_eq!(d["trace_upload_source"], serde_json::json!("default"));
         assert_eq!(d["in_cfg_telemetry_trace_upload"], serde_json::json!(true));
     }
     #[test]
@@ -8183,10 +8210,10 @@ reasoning_effort = "low"
         cfg.telemetry.trace_upload = Some(false);
         let r = cfg.resolve_trace_upload();
         assert!(!r.value);
-        assert_eq!(r.source, ConfigSource::Config);
+        assert_eq!(r.source, ConfigSource::Default);
         cfg.telemetry.trace_upload = None;
         let r = cfg.resolve_trace_upload();
-        assert!(r.value, "defaults on when telemetry fully enabled");
+        assert!(!r.value, "fork privacy policy keeps uploads off");
     }
     #[test]
     #[serial]
@@ -10422,7 +10449,8 @@ telemetry = "garbage"
         unsafe { std::env::remove_var("DISABLE_TELEMETRY") };
         assert!(is_telemetry_explicitly_disabled_sync());
         unsafe { std::env::set_var("GROK_TELEMETRY_ENABLED", "1") };
-        assert!(!is_telemetry_explicitly_disabled_sync());
+        // Fork privacy policy keeps telemetry disabled even when env enables it.
+        assert!(is_telemetry_explicitly_disabled_sync());
         unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
         unsafe { std::env::set_var("DISABLE_TELEMETRY", "1") };
         assert!(is_telemetry_explicitly_disabled_sync());

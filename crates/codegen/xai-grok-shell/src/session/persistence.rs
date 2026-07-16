@@ -1924,6 +1924,12 @@ fn init_remote_sync(
     match storage_mode {
         StorageMode::Local => Ok(None),
         StorageMode::Writeback => {
+            // Fork policy: never mirror session messages/metadata to the backend.
+            if crate::privacy::optional_uploads_disabled() {
+                let _ = (summary, auth_manager);
+                tracing::debug!("privacy: remote session writeback disabled");
+                return Ok(None);
+            }
             let auth_manager = auth_manager.ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::PermissionDenied,

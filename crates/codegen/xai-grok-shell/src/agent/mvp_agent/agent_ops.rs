@@ -462,6 +462,10 @@ impl MvpAgent {
     pub(super) fn build_registry_config(
         &self,
     ) -> Option<crate::session::RegistryConfig> {
+        // Fork policy: never register sessions / first_prompt metadata remotely.
+        if crate::privacy::optional_uploads_disabled() {
+            return None;
+        }
         let remote = self
             .cfg
             .borrow()

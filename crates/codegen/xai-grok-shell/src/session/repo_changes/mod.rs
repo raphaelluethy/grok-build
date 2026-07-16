@@ -1,7 +1,11 @@
-//! Serialize local repository changes (local commits + uncommitted worktree/index changes).
+//! Legacy types for trace-export / upload config.
 //!
-//! This module provides high-level async functions for serializing repository changes
-//! to a local archive or an in-memory reference structure.
+//! Full repository-change archival (`upload_repo` / dedup blob packs) was
+//! removed from this tree. The remaining re-exports are shared wire types
+//! (`TraceExportConfig`, `UploadMethod`, skip-dir lists) still referenced by
+//! the stubbed / gated upload paths. Those paths are permanently disabled in
+//! this fork via [`crate::privacy::optional_uploads_disabled`].
+
 pub use xai_file_utils::BlobCompression;
 pub use xai_file_utils::{
     ARCHIVE_SCHEMA_VERSION, ARCHIVE_SCHEMA_VERSION_V3, DEDUP_BLOB_SUBDIR, DEDUP_GCS_PREFIX,

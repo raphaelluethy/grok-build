@@ -31,6 +31,13 @@ pub async fn handle(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
 async fn handle_share_session(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     let request: ShareSessionRequest = parse_params(args)?;
 
+    // Fork policy: session share uploads (messages → GCS + backend URL) are off.
+    if crate::privacy::optional_uploads_disabled() {
+        let _ = (&agent, &request);
+        return Err(acp::Error::invalid_params()
+            .data("Session sharing is disabled in this build."));
+    }
+
     // Get auth - required for sharing.
     let auth = require_xai_auth_for_share(&agent.auth_manager)?;
 

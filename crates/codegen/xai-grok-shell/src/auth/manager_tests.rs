@@ -492,19 +492,17 @@ fn manager_collection_predicates_fail_directions() {
     let dir = tempfile::tempdir().unwrap();
     let mgr = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
 
-    // No credential: disabled=false (fail-open), allows=false (fail-closed).
-    assert!(!mgr.is_data_collection_disabled());
+    // Fork privacy policy: collection is always suppressed.
+    assert!(mgr.is_data_collection_disabled());
     assert!(
         !mgr.allows_data_collection(),
-        "missing credential must fail closed for collection"
+        "fork policy must fail closed for collection"
     );
 
-    // Normal user: both predicates allow collection.
     mgr.hot_swap(GrokAuth::test_default());
-    assert!(!mgr.is_data_collection_disabled());
-    assert!(mgr.allows_data_collection());
+    assert!(mgr.is_data_collection_disabled());
+    assert!(!mgr.allows_data_collection());
 
-    // Opted-out user: both predicates suppress collection.
     mgr.hot_swap(GrokAuth {
         coding_data_retention_opt_out: true,
         ..GrokAuth::test_default()
@@ -512,10 +510,8 @@ fn manager_collection_predicates_fail_directions() {
     assert!(mgr.is_data_collection_disabled());
     assert!(!mgr.allows_data_collection());
 
-    // Mid-session `/logout`: the fail-closed predicate flips back to
-    // "no collection" even after a previously permissive credential.
     mgr.hot_swap(GrokAuth::test_default());
-    assert!(mgr.allows_data_collection(), "precondition");
+    assert!(!mgr.allows_data_collection(), "still suppressed under fork policy");
     mgr.clear_in_memory();
     assert!(
         !mgr.allows_data_collection(),

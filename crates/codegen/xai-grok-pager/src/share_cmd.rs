@@ -13,6 +13,10 @@ pub struct ShareArgs {
 }
 
 pub async fn run(args: &ShareArgs, agent_config: &AgentConfig) -> Result<()> {
+    if xai_grok_shell::privacy::optional_uploads_disabled() {
+        let _ = (args, agent_config);
+        anyhow::bail!("Session sharing is disabled in this build.");
+    }
     let cancel = CancellationToken::new();
     let spawned = crate::acp::spawn::spawn_grok_shell(agent_config.clone(), &cancel, None).await?;
 
