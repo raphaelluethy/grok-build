@@ -535,6 +535,9 @@ const CONTEXTUAL_HINTS_CHILDREN: &[&str] = &[
     "contextual_hints.ssh_wrap",
 ];
 
+/// Connected-provider model visibility toggles shown in the Models sub-sheet.
+const PROVIDER_VISIBILITY_CHILDREN: &[&str] = &["show_openrouter_models", "show_chatgpt_models"];
+
 /// Build the catalog. Called once at process start via
 /// `SettingsRegistry::defaults()`.
 pub fn default_settings() -> Vec<SettingMeta> {
@@ -917,6 +920,75 @@ pub fn default_settings() -> Vec<SettingMeta> {
                 default: "",
                 source: DynamicEnumSource::ActiveModelCatalog,
                 supports_preview: false,
+            },
+            restart_required: false,
+            hidden_in_minimal: false,
+        },
+        SettingMeta {
+            key: "visible_model_providers",
+            category: SettingCategory::Models,
+            owner: SettingOwner::Shell,
+            label: "Visible providers",
+            description: "Choose which connected providers contribute models to the picker.",
+            keywords: &[
+                "provider",
+                "providers",
+                "models",
+                "visible",
+                "hide",
+                "openrouter",
+                "chatgpt",
+                "codex",
+            ],
+            kind: SettingKind::Group {
+                children: PROVIDER_VISIBILITY_CHILDREN,
+            },
+            restart_required: false,
+            hidden_in_minimal: false,
+        },
+        SettingMeta {
+            key: "show_openrouter_models",
+            category: SettingCategory::Models,
+            owner: SettingOwner::Shell,
+            label: "OpenRouter",
+            description: "Include models from the connected OpenRouter account.",
+            keywords: &["provider", "models", "openrouter", "visible", "hide"],
+            kind: SettingKind::Bool {
+                default: ui_default.show_openrouter_models.unwrap_or(true),
+            },
+            restart_required: false,
+            hidden_in_minimal: false,
+        },
+        SettingMeta {
+            key: "show_chatgpt_models",
+            category: SettingCategory::Models,
+            owner: SettingOwner::Shell,
+            label: "ChatGPT subscription",
+            description: "Include Codex models from the connected ChatGPT subscription.",
+            keywords: &[
+                "provider",
+                "models",
+                "chatgpt",
+                "codex",
+                "subscription",
+                "visible",
+                "hide",
+            ],
+            kind: SettingKind::Bool {
+                default: ui_default.show_chatgpt_models.unwrap_or(true),
+            },
+            restart_required: false,
+            hidden_in_minimal: false,
+        },
+        SettingMeta {
+            key: "codex_fast_mode",
+            category: SettingCategory::Models,
+            owner: SettingOwner::Shell,
+            label: "Codex fast mode",
+            description: "Use the priority service tier on ChatGPT subscription models that support it.",
+            keywords: &["codex", "chatgpt", "fast", "priority", "service", "tier"],
+            kind: SettingKind::Bool {
+                default: ui_default.codex_fast_mode.unwrap_or(false),
             },
             restart_required: false,
             hidden_in_minimal: false,

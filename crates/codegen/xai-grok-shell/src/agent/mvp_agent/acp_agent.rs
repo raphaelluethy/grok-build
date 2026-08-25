@@ -2200,6 +2200,9 @@ impl acp::Agent for MvpAgent {
             "x.ai/getApiKey" | "x.ai/setApiKey" => {
                 crate::extensions::auth::handle(self, &args).await
             }
+            "x.ai/providers/connect" | "x.ai/providers/disconnect" => {
+                crate::extensions::providers::handle(self, &args).await
+            }
             "x.ai/session/info" | "x.ai/session/close" | "x.ai/session/list"
             | "x.ai/sessions/list" => {
                 crate::agent::handlers::session::handle(self, &args).await

@@ -2318,6 +2318,9 @@ impl SessionActor {
                 })),
             );
             let mut request = request;
+            if self.models_manager.fast_mode_enabled_for_current_model() {
+                request.service_tier = Some(xai_grok_sampling_types::rs::ServiceTier::Priority);
+            }
             request.x_grok_session_id = Some(self.session_info.id.to_string());
             request.x_grok_turn_idx =
                 Some(self.chat_state_handle.get_prompt_index().await.to_string());

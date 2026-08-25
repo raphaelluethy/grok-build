@@ -117,6 +117,7 @@ impl SamplerActor {
                     .unwrap_or_else(|| self.state.config.clone());
                 let event_tx = self.event_tx.clone();
                 let retry_policy = self.state.retry_policy.clone();
+                let responses_websocket = self.state.responses_websocket.clone();
                 let request_inner = *request;
                 self.tasks.spawn(request_task::run_request_task(
                     request_id,
@@ -126,6 +127,7 @@ impl SamplerActor {
                     event_tx,
                     cancel_token,
                     completion_tx,
+                    responses_websocket,
                 ));
             }
             SamplerCommand::Cancel { request_id } => {

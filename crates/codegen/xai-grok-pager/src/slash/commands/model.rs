@@ -172,11 +172,18 @@ fn build_model_items(models: &ModelState) -> Vec<ArgItem> {
             info.name.clone()
         };
 
+        let provider = models.provider_for(id);
+        let match_text = if let Some(provider) = provider {
+            format!("{} {}", info.name, provider)
+        } else {
+            info.name.clone()
+        };
+
         items.push(ArgItem {
             display,
-            match_text: info.name.clone(),
+            match_text,
             insert_text,
-            description: info.description.clone().unwrap_or_default(),
+            description: provider.unwrap_or("").to_string(),
         });
     }
     items
@@ -263,6 +270,23 @@ mod tests {
         );
         // No interior whitespace → nothing to split off.
         assert!(split_trailing_token("reasoning-x-pro").is_none());
+    }
+
+    #[test]
+    fn model_with_provider_meta_sets_description_and_match_text() {
+        let mut state = ModelState::default();
+        let id = acp::ModelId::new(Arc::from("grok"));
+        let info = acp::ModelInfo::new(id.clone(), "Grok".to_string()).meta(
+            serde_json::json!({ "provider": "xAI" })
+                .as_object()
+                .cloned(),
+        );
+        state.available.insert(id, info);
+
+        let items = build_model_items(&state);
+        let grok = items.iter().find(|i| i.display == "Grok").unwrap();
+        assert_eq!(grok.description, "xAI");
+        assert_eq!(grok.match_text, "Grok xAI");
     }
 
     #[test]

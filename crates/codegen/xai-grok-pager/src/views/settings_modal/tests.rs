@@ -684,6 +684,10 @@ fn rows_contain_categories_and_settings_through_pr_14() {
             "coding_data_sharing",
             // SHELL-owned default_model (Models category).
             "default_model",
+            // Provider children live in this group sub-sheet.
+            "visible_model_providers",
+            // Priority-tier preference for compatible ChatGPT models.
+            "codex_fast_mode",
             // Models category. `default_reasoning_effort`,
             // `web_search_model`, and `session_summary_model` are
             // not exposed in the modal.

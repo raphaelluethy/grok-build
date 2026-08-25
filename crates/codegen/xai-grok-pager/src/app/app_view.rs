@@ -4709,6 +4709,7 @@ impl AppView {
                             announcement: hero_announcement,
                             tip,
                             model_name: &model_name,
+                            model_provider: self.models.current_provider(),
                             flags: &flags_vec,
                             selected: self.welcome_menu_index,
                             team_name: self.team_name.as_deref(),

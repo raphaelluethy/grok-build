@@ -25,6 +25,18 @@ fn test_conversation_request_to_responses_api() {
 }
 
 #[test]
+fn responses_request_carries_priority_service_tier() {
+    let req = ConversationRequest {
+        service_tier: Some(rs::ServiceTier::Priority),
+        ..ConversationRequest::from_items(vec![ConversationItem::user("hi")]).with_model("test")
+    };
+
+    let response: rs::CreateResponse = (&req).into();
+
+    assert_eq!(response.service_tier, Some(rs::ServiceTier::Priority));
+}
+
+#[test]
 fn function_tool_colliding_with_hosted_web_search_is_dropped() {
     let mut req =
         ConversationRequest::from_items(vec![ConversationItem::user("hi")]).with_tools(vec![

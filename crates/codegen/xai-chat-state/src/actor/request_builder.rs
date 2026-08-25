@@ -98,6 +98,7 @@ impl ChatStateActor {
             temperature: self.state.sampling_config.temperature,
             max_output_tokens: self.state.sampling_config.max_completion_tokens,
             top_p: self.state.sampling_config.top_p,
+            service_tier: None,
             x_grok_conv_id: Some(conv_id),
             x_grok_req_id: Some(req_id),
             x_grok_session_id: None,

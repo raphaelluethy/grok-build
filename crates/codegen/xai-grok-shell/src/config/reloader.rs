@@ -392,13 +392,19 @@ impl ConfigReloader {
                 .send(ConfigUpdate::Compat(Box::new(new_compat)));
         }
 
-        // Models — compare [model] (BYOK entries) and [models] (default, surprise) tables.
+        // Models — compare [model] (BYOK entries), [models] (default, surprise),
+        // and the UI fields that affect the connected-provider catalog/request tier.
         // Use toml::Value comparison (covers all fields including nested model entries).
         let old_model_table = self.last_global_config.get("model");
         let new_model_table = new_global.get("model");
         let old_models_table = self.last_global_config.get("models");
         let new_models_table = new_global.get("models");
-        if old_model_table != new_model_table || old_models_table != new_models_table {
+        let old_provider_ui = extract_provider_model_ui_fields(&self.last_global_config);
+        let new_provider_ui = extract_provider_model_ui_fields(&new_global);
+        if old_model_table != new_model_table
+            || old_models_table != new_models_table
+            || old_provider_ui != new_provider_ui
+        {
             info!("model config change detected");
             let _ = self.config_update_tx.send(ConfigUpdate::ModelsChanged);
         }
@@ -559,6 +565,21 @@ fn extract_ui_fields(config: &toml::Value) -> (Option<String>, bool, Option<Stri
     (theme, yolo, fork)
 }
 
+fn extract_provider_model_ui_fields(
+    config: &toml::Value,
+) -> (Option<bool>, Option<bool>, Option<bool>) {
+    let ui = config.get("ui").and_then(|v| v.as_table());
+    let get_bool = |key: &str| {
+        ui.and_then(|table| table.get(key))
+            .and_then(toml::Value::as_bool)
+    };
+    (
+        get_bool("show_openrouter_models"),
+        get_bool("show_chatgpt_models"),
+        get_bool("codex_fast_mode"),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -571,6 +592,23 @@ mod tests {
             email: Some("test@test.com".to_string()),
             ..GrokAuth::test_default()
         }
+    }
+
+    #[test]
+    fn extracts_provider_model_ui_fields_independently() {
+        let config: toml::Value = toml::from_str(
+            r#"
+                [ui]
+                show_openrouter_models = false
+                show_chatgpt_models = true
+                codex_fast_mode = true
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            extract_provider_model_ui_fields(&config),
+            (Some(false), Some(true), Some(true))
+        );
     }
 
     #[tokio::test]

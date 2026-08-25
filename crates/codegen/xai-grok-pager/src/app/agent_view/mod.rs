@@ -68,6 +68,18 @@ use crate::actions::ActionId;
 use crate::key;
 use crate::render::SafeBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+static CODEX_FAST_MODE_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn set_codex_fast_mode_enabled(enabled: bool) {
+    CODEX_FAST_MODE_ENABLED.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn codex_fast_mode_enabled() -> bool {
+    CODEX_FAST_MODE_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Hit areas for inline media buttons, rebuilt each frame.
 ///
 /// All hit areas are cleared at the start of inline media rendering and

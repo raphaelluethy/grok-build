@@ -630,6 +630,7 @@ pub struct WelcomeRenderParams<'a> {
     pub announcement: Option<&'a xai_grok_announcements::RemoteAnnouncement>,
     pub tip: Option<&'a str>,
     pub model_name: &'a str,
+    pub model_provider: Option<&'a str>,
     pub flags: &'a [PromptFlag<'a>],
     pub selected: Option<usize>,
     pub team_name: Option<&'a str>,
@@ -738,6 +739,7 @@ pub fn render_welcome(
             let msg = error.as_deref().map(|e| (e, theme.accent_error));
             let info = PromptInfo {
                 model_name: params.model_name,
+                model_provider: params.model_provider,
                 flags: params.flags,
                 multiline: false,
                 usage_warning: None,
@@ -2226,6 +2228,7 @@ fn render_welcome_done(
         };
         let usage_info = PromptInfo {
             model_name: p.model_name,
+            model_provider: p.model_provider,
             flags: p.flags,
             multiline: false,
             usage_warning: usage_warning_text.as_deref(),
@@ -2895,6 +2898,7 @@ mod tests {
             announcement: None,
             tip: None,
             model_name: "test",
+            model_provider: None,
             flags: &[],
             selected: None,
             team_name: None,

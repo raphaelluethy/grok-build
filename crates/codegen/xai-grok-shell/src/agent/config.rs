@@ -3777,6 +3777,7 @@ struct DefaultModelJson {
     model: String,
     model_family: Option<String>,
     name: Option<String>,
+    provider: Option<String>,
     description: Option<String>,
     context_window: Option<NonZeroU64>,
     temperature: Option<f32>,
@@ -3840,6 +3841,7 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
                 base_url: endpoints.resolve_inference_base_url(),
                 api_base_url: Some(endpoints.xai_api_base_url.clone()),
                 name: m.name,
+                provider: m.provider,
                 description: m.description,
                 context_window,
                 auto_compact_threshold_percent: m.auto_compact_threshold_percent,
@@ -3889,6 +3891,9 @@ pub struct ModelEntryConfig {
     /// Human-readable display name of the model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Short provider label shown in the model picker (e.g. "xAI", "OpenRouter").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4019,6 +4024,7 @@ pub struct ConfigModelOverride {
     pub model_family: Option<String>,
     pub base_url: Option<String>,
     pub name: Option<String>,
+    pub provider: Option<String>,
     pub description: Option<String>,
     pub api_key: Option<String>,
     /// Env var name(s) for the provider key — string or array in config.toml.
@@ -4088,6 +4094,9 @@ impl ConfigModelOverride {
         }
         if self.name.is_some() {
             entry.info.name.clone_from(&self.name);
+        }
+        if self.provider.is_some() {
+            entry.info.provider.clone_from(&self.provider);
         }
         if self.description.is_some() {
             entry.info.description.clone_from(&self.description);
@@ -4204,6 +4213,9 @@ pub struct ModelInfo {
     /// (`/model`) and `/session-info` -- when set, that's the label shown
     /// to users in either consumer.
     pub name: Option<String>,
+    /// Short provider label shown in the model picker (e.g. "xAI", "OpenRouter").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
     pub description: Option<String>,
     pub max_completion_tokens: Option<u32>,
     pub temperature: Option<f32>,
@@ -4246,6 +4258,9 @@ pub struct ModelInfo {
     pub reasoning_effort: Option<ReasoningEffort>,
     /// When true, the UI shows effort controls for this model.
     pub supports_reasoning_effort: bool,
+    /// Whether this model accepts the Responses API priority service tier.
+    #[serde(default)]
+    pub supports_fast_mode: bool,
     /// Per-model reasoning-effort menu (source of truth); legacy fields derived from it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reasoning_efforts: Vec<ReasoningEffortOption>,
@@ -4275,6 +4290,7 @@ impl ModelInfo {
             model_family: None,
             base_url: String::new(),
             name: None,
+            provider: None,
             description: None,
             max_completion_tokens: None,
             temperature: None,
@@ -4296,6 +4312,7 @@ impl ModelInfo {
             supported_in_api: true,
             reasoning_effort: None,
             supports_reasoning_effort: false,
+            supports_fast_mode: false,
             reasoning_efforts: Vec::new(),
             supports_backend_search: false,
             compactions_remaining: None,
@@ -4314,6 +4331,7 @@ impl ModelInfo {
             model_family: entry.model_family.clone(),
             base_url: entry.base_url.clone(),
             name: entry.name.clone(),
+            provider: entry.provider.clone(),
             description: entry.description.clone(),
             max_completion_tokens: entry.max_completion_tokens,
             temperature: entry.temperature,
@@ -4335,6 +4353,7 @@ impl ModelInfo {
             supported_in_api: entry.supported_in_api,
             reasoning_effort: entry.reasoning_effort,
             supports_reasoning_effort: entry.supports_reasoning_effort,
+            supports_fast_mode: false,
             reasoning_efforts: entry.reasoning_efforts.clone(),
             supports_backend_search: entry.supports_backend_search,
             compactions_remaining: entry.compactions_remaining,
@@ -5083,6 +5102,7 @@ pub(crate) fn resolve_aux_model_sampling_config(
                     .unwrap_or_else(|| model_id.to_owned()),
                 base_url: endpoints.resolve_inference_base_url(),
                 name: None,
+                provider: None,
                 description: None,
                 max_completion_tokens: None,
                 temperature: None,
@@ -5104,6 +5124,7 @@ pub(crate) fn resolve_aux_model_sampling_config(
                 supported_in_api: true,
                 reasoning_effort: None,
                 supports_reasoning_effort: false,
+                supports_fast_mode: false,
                 reasoning_efforts: Vec::new(),
                 supports_backend_search: false,
                 compactions_remaining: None,
@@ -5320,6 +5341,7 @@ fn resolve_hidden_default_web_search_sampling_config(
             model: model_id.to_owned(),
             base_url: endpoints.resolve_inference_base_url(),
             name: None,
+            provider: None,
             description: None,
             max_completion_tokens: None,
             temperature: None,
@@ -5342,6 +5364,7 @@ fn resolve_hidden_default_web_search_sampling_config(
             supported_in_api: true,
             reasoning_effort: None,
             supports_reasoning_effort: false,
+            supports_fast_mode: false,
             reasoning_efforts: Vec::new(),
             supports_backend_search: false,
             compactions_remaining: None,
@@ -5430,6 +5453,18 @@ pub(crate) fn to_acp_model_info(
                     "agentType".to_string(),
                     serde_json::Value::String(info.agent_type.clone()),
                 );
+                let provider = info
+                    .provider
+                    .clone()
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or_else(|| crate::providers::infer_provider(&info.base_url, None));
+                map.insert("provider".to_string(), serde_json::Value::String(provider));
+                if info.supports_fast_mode {
+                    map.insert(
+                        "supportsFastMode".to_string(),
+                        serde_json::Value::Bool(true),
+                    );
+                }
                 if info.supports_reasoning_effort {
                     map.insert(
                         "supportsReasoningEffort".to_string(),

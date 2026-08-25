@@ -934,9 +934,7 @@ pub(super) async fn send_logout(tx: &AcpAgentTx) {
 pub(super) async fn send_auth_cancel(tx: &AcpAgentTx, request_seq: u64) -> TaskResult {
     let req = acp::ExtRequest::new(
         "x.ai/auth/cancel",
-        serde_json::value::to_raw_value(
-                &serde_json::json!({ "request_seq": request_seq }),
-            )
+        serde_json::value::to_raw_value(&serde_json::json!({ "request_seq": request_seq }))
             .expect("serialize auth/cancel params")
             .into(),
     );
@@ -944,6 +942,61 @@ pub(super) async fn send_auth_cancel(tx: &AcpAgentTx, request_seq: u64) -> TaskR
         tracing::debug!(error = %e, "auth cancel ext request failed (ignored)");
     }
     TaskResult::AuthCancelComplete
+}
+
+fn provider_display_name(provider: &str) -> &str {
+    match provider.to_ascii_lowercase().as_str() {
+        "openrouter" => "OpenRouter",
+        "chatgpt" => "ChatGPT",
+        _ => provider,
+    }
+}
+
+pub(super) async fn send_connect_provider(
+    tx: &AcpAgentTx,
+    provider: String,
+    api_key: Option<String>,
+) -> TaskResult {
+    let mut params = serde_json::json!({ "provider": provider.clone() });
+    if let Some(key) = api_key {
+        params["apiKey"] = serde_json::Value::String(key);
+    }
+    let req = acp::ExtRequest::new(
+        "x.ai/providers/connect",
+        serde_json::value::to_raw_value(&params)
+            .expect("serialize providers/connect params")
+            .into(),
+    );
+    let message = match acp_send(req, tx).await {
+        Ok(resp) => {
+            let envelope: serde_json::Value =
+                serde_json::from_str(resp.0.get()).unwrap_or_default();
+            if let Some(err) = envelope.get("error") {
+                let detail = err
+                    .as_str()
+                    .map(str::to_string)
+                    .or_else(|| {
+                        err.get("message")
+                            .and_then(|m| m.as_str())
+                            .map(str::to_string)
+                    })
+                    .unwrap_or_else(|| "connect failed".to_string());
+                Err(sanitize_user_error(&detail))
+            } else if envelope.get("result").is_some() {
+                Ok(format!(
+                    "{} connected",
+                    provider_display_name(&provider)
+                ))
+            } else {
+                Err("unexpected connect response".to_string())
+            }
+        }
+        Err(e) => Err(sanitize_user_error(&format!("connect failed: {e}"))),
+    };
+    TaskResult::ConnectProviderComplete {
+        provider,
+        message,
+    }
 }
 pub(super) async fn send_check_subscription(
     tx: &AcpAgentTx,
@@ -1236,6 +1289,30 @@ pub(crate) async fn persist_setting(
                 return Err(kind_mismatch("default_model", "String", &value));
             };
             xai_grok_shell::util::config::set_default_model(s)
+                .await
+                .map_err(|e| e.to_string())
+        }
+        "show_openrouter_models" => {
+            let SettingValue::Bool(b) = value else {
+                return Err(kind_mismatch("show_openrouter_models", "Bool", &value));
+            };
+            xai_grok_shell::util::config::set_show_openrouter_models(b)
+                .await
+                .map_err(|e| e.to_string())
+        }
+        "show_chatgpt_models" => {
+            let SettingValue::Bool(b) = value else {
+                return Err(kind_mismatch("show_chatgpt_models", "Bool", &value));
+            };
+            xai_grok_shell::util::config::set_show_chatgpt_models(b)
+                .await
+                .map_err(|e| e.to_string())
+        }
+        "codex_fast_mode" => {
+            let SettingValue::Bool(b) = value else {
+                return Err(kind_mismatch("codex_fast_mode", "Bool", &value));
+            };
+            xai_grok_shell::util::config::set_codex_fast_mode(b)
                 .await
                 .map_err(|e| e.to_string())
         }

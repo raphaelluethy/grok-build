@@ -910,6 +910,9 @@ pub(super) fn action_for_bool(key: SettingKey, new: bool) -> Option<Action> {
         "show_tips" => Some(Action::SetShowTips(new)),
         "auto_update" => Some(Action::SetAutoUpdate(new)),
         "display_refresh_auto_cadence" => Some(Action::SetDisplayRefreshAutoCadence(new)),
+        "show_openrouter_models" => Some(Action::SetShowOpenRouterModels(new)),
+        "show_chatgpt_models" => Some(Action::SetShowChatGptModels(new)),
+        "codex_fast_mode" => Some(Action::SetCodexFastMode(new)),
         _ => None,
     }
 }

@@ -26,6 +26,7 @@ mod doom_loop_recovery;
 pub mod events;
 pub mod handle;
 pub mod metrics;
+mod responses_websocket;
 pub mod retry;
 pub mod sampling_log;
 mod shared_http;

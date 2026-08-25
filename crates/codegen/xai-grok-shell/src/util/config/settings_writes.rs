@@ -231,6 +231,20 @@ pub async fn set_feedback_trace_card(value: bool) -> Result<()> {
     .await
 }
 
+/// Persist connected-provider catalog visibility. Credentials remain untouched.
+pub async fn set_show_openrouter_models(value: bool) -> Result<()> {
+    update_config(|cfg| cfg.ui.show_openrouter_models = Some(value)).await
+}
+
+pub async fn set_show_chatgpt_models(value: bool) -> Result<()> {
+    update_config(|cfg| cfg.ui.show_chatgpt_models = Some(value)).await
+}
+
+/// Persist whether supported ChatGPT subscription models use the priority tier.
+pub async fn set_codex_fast_mode(value: bool) -> Result<()> {
+    update_config(|cfg| cfg.ui.codex_fast_mode = Some(value)).await
+}
+
 /// Persist `[ui].fork_secondary_model` via `update_config`.
 ///
 /// Caller must validate against the model catalog. Empty string

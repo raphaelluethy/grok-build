@@ -6,10 +6,12 @@
 //! discipline matching the hunk-tracker pattern.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
 use crate::config::{RetryPolicy, SamplerConfig};
+use crate::responses_websocket::ResponsesWebSocketState;
 use crate::types::RequestId;
 
 /// In-flight request bookkeeping.
@@ -26,14 +28,17 @@ pub(crate) struct ActorState {
     pub(crate) active_requests: HashMap<RequestId, ActiveRequest>,
     pub(crate) config: SamplerConfig,
     pub(crate) retry_policy: RetryPolicy,
+    pub(crate) responses_websocket: Arc<ResponsesWebSocketState>,
 }
 
 impl ActorState {
     pub(crate) fn new(config: SamplerConfig, retry_policy: RetryPolicy) -> Self {
+        let responses_websocket = Arc::new(ResponsesWebSocketState::new(&config));
         Self {
             active_requests: HashMap::new(),
             config,
             retry_policy,
+            responses_websocket,
         }
     }
 
@@ -68,6 +73,9 @@ impl ActorState {
     /// Replace the default config. The next request submitted without
     /// an override will use this.
     pub(crate) fn update_config(&mut self, config: SamplerConfig) {
+        if !self.responses_websocket.matches_config(&config) {
+            self.responses_websocket = Arc::new(ResponsesWebSocketState::new(&config));
+        }
         self.config = config;
     }
 }
@@ -147,5 +155,25 @@ mod tests {
         };
         assert!(state.register(id.clone(), first).is_none());
         assert!(state.register(id.clone(), second).is_some());
+    }
+
+    #[test]
+    fn model_only_config_update_preserves_websocket_session() {
+        let mut state = ActorState::new(cfg(), RetryPolicy::default());
+        let original = Arc::clone(&state.responses_websocket);
+        let mut updated = state.config.clone();
+        updated.model = "different-model".to_owned();
+        state.update_config(updated);
+        assert!(Arc::ptr_eq(&original, &state.responses_websocket));
+    }
+
+    #[test]
+    fn provider_config_update_replaces_websocket_session() {
+        let mut state = ActorState::new(cfg(), RetryPolicy::default());
+        let original = Arc::clone(&state.responses_websocket);
+        let mut updated = state.config.clone();
+        updated.base_url = "https://different.example.test".to_owned();
+        state.update_config(updated);
+        assert!(!Arc::ptr_eq(&original, &state.responses_websocket));
     }
 }

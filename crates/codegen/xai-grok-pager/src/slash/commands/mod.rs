@@ -11,6 +11,7 @@ pub mod cd;
 pub mod compact;
 pub mod compact_mode;
 pub mod config_agents;
+pub mod connect;
 pub mod context;
 pub mod copy;
 pub mod dashboard;
@@ -150,6 +151,7 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(doctor::DoctorCommand),
         Arc::new(import_claude::ImportClaudeCommand),
         Arc::new(login::LoginCommand),
+        Arc::new(connect::ConnectCommand),
         Arc::new(logout::LogoutCommand),
         Arc::new(home::HomeCommand),
         Arc::new(delete::DeleteCommand),
@@ -222,6 +224,7 @@ mod tests {
         assert!(reg.get("model").is_some());
         assert!(reg.get("home").is_some());
         assert!(reg.get("view-plan").is_some());
+        assert!(reg.get("connect").is_some());
         reg.set_available_tools(std::collections::HashSet::from([
             "scheduler_create".to_string()
         ]));

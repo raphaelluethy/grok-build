@@ -685,6 +685,7 @@ mod tests {
             model_family: None,
             base_url: Some("https://example.com".into()),
             name: Some("Model M".into()),
+            provider: Some("xAI".into()),
             description: Some("desc".into()),
             api_key: Some("key".into()),
             env_key: Some(crate::agent::config::EnvKeys::single("ENV_KEY")),

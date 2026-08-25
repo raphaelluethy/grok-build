@@ -1678,6 +1678,9 @@ pub(crate) async fn run(
     // Single-key load so a malformed unrelated `[ui]` field cannot wipe this.
     let page_flip_on_send = crate::appearance::cache::load_page_flip_on_send();
     app.current_ui.page_flip_on_send = Some(page_flip_on_send);
+    crate::app::agent_view::set_codex_fast_mode_enabled(
+        app.current_ui.codex_fast_mode.unwrap_or(false),
+    );
     // Disk load replaces `current_ui`. Assign one policy-clamped resolved
     // launch mode unconditionally (CLI > TOML > remote > Ask) so disk Auto
     // cannot win over `--permission-mode ask`, and a policy-clamped remote

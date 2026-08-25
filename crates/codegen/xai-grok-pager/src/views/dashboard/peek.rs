@@ -143,6 +143,10 @@ pub struct PeekPanelState {
     /// when unknown. Set by the render-time refresh from the live agent,
     /// not carried in [`PeekFields`].
     pub model_name: Option<String>,
+    /// Peeked agent's current model provider, painted after the model name.
+    pub model_provider: Option<String>,
+    /// Whether the peeked model can use the ChatGPT priority service tier.
+    pub fast_supported: bool,
     /// Whether the peeked agent runs in always-approve (yolo) mode. Shown
     /// as an `always-approve` flag next to the model on the bottom border —
     /// the same signal the dashboard row badge carried.
@@ -177,6 +181,8 @@ impl PeekPanelState {
             // Populated by the render-time refresh from the live agent
             // (see `peek_model_and_mode`); defaults are harmless until then.
             model_name: None,
+            model_provider: None,
+            fast_supported: false,
             auto_approve: false,
             auto: false,
             plan_mode: false,
@@ -397,6 +403,8 @@ pub fn compute_peek_fields(
 /// call/return site.
 pub struct PeekModeBadge {
     pub model: Option<String>,
+    pub provider: Option<String>,
+    pub fast_supported: bool,
     pub yolo: bool,
     pub auto: bool,
     pub plan: bool,
@@ -414,6 +422,8 @@ pub fn peek_model_and_mode(
 ) -> PeekModeBadge {
     let default = || PeekModeBadge {
         model: None,
+        provider: None,
+        fast_supported: false,
         yolo: false,
         auto: false,
         plan: false,
@@ -426,6 +436,12 @@ pub fn peek_model_and_mode(
                 let plan = agent.plan_mode_pending.unwrap_or(agent.plan_mode_active);
                 PeekModeBadge {
                     model: agent.session.models.current_model_name(),
+                    provider: agent
+                        .session
+                        .models
+                        .current_provider()
+                        .map(|s| s.to_string()),
+                    fast_supported: agent.session.models.current_model_supports_fast_mode(),
                     yolo: agent.session.yolo_mode,
                     auto: agent.session.is_auto(),
                     plan,
@@ -443,11 +459,29 @@ pub fn peek_model_and_mode(
                     .get(child_session_id)
                     .and_then(|c| c.session.models.current_model_name())
                     .or_else(|| parent_agent.session.models.current_model_name());
+                let provider = parent_agent
+                    .subagent_views
+                    .get(child_session_id)
+                    .and_then(|c| c.session.models.current_provider())
+                    .or_else(|| parent_agent.session.models.current_provider())
+                    .map(|s| s.to_string());
+                let fast_supported = parent_agent
+                    .subagent_views
+                    .get(child_session_id)
+                    .map(|child| child.session.models.current_model_supports_fast_mode())
+                    .unwrap_or_else(|| {
+                        parent_agent
+                            .session
+                            .models
+                            .current_model_supports_fast_mode()
+                    });
                 // Auto (like always-approve) follows the parent: subagents run
                 // under the parent's permission mode. Plan stays false (subagents
                 // have no plan mode of their own).
                 PeekModeBadge {
                     model,
+                    provider,
+                    fast_supported,
                     yolo: parent_agent.session.yolo_mode,
                     auto: parent_agent.session.is_auto(),
                     plan: false,
@@ -491,6 +525,7 @@ fn paint_peek_config_badge(
         return;
     }
     let model_label = panel.model_name.clone().unwrap_or_default();
+    let model_provider = panel.model_provider.as_deref();
     let mut flags: Vec<PromptFlag> = Vec::new();
     // Mirror the chat prompt's flag precedence: plan wins over always-approve
     // wins over auto. Plan mode blocks edits regardless of the underlying
@@ -516,11 +551,19 @@ fn paint_peek_config_badge(
             bold: false,
         });
     }
+    if crate::app::agent_view::codex_fast_mode_enabled() && panel.fast_supported {
+        flags.push(PromptFlag {
+            text: "fast",
+            color: Some(theme.accent_system),
+            bold: false,
+        });
+    }
     if model_label.is_empty() && flags.is_empty() && !multiline {
         return;
     }
     let info = PromptInfo {
         model_name: &model_label,
+        model_provider,
         flags: &flags,
         multiline,
         usage_warning: None,

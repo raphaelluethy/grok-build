@@ -2,9 +2,9 @@
 //! hints and the subagent fullscreen view.
 use super::{
     ActivePane, AgentPane, AgentView, AgentViewLayout, BlockingCard, CtaPhase, EscStep,
-    InlineMediaHitAreas, KeyOwner, MODE_BANNER_FADE_TICKS, PromptMode, collect_citation_links,
-    dropdown_content_inset, dropdown_items_width, record_dot_pulse, render_dropdown_chrome,
-    supports_osc22,
+    InlineMediaHitAreas, KeyOwner, MODE_BANNER_FADE_TICKS, PromptMode, codex_fast_mode_enabled,
+    collect_citation_links, dropdown_content_inset, dropdown_items_width, record_dot_pulse,
+    render_dropdown_chrome, supports_osc22,
 };
 use crate::actions::{ActionId, ActionRegistry};
 use crate::key;
@@ -2533,6 +2533,13 @@ impl AgentView {
                 bold: false,
             });
         }
+        if codex_fast_mode_enabled() && self.session.models.current_model_supports_fast_mode() {
+            mode_flags_vec.push(PromptFlag {
+                text: "fast",
+                color: Some(theme.accent_system),
+                bold: false,
+            });
+        }
         let mode_flags: &[PromptFlag] = &mode_flags_vec;
         let multiline = self.multiline_mode;
         let warning = self.credit_balance.as_ref().and_then(|bal| {
@@ -2553,6 +2560,7 @@ impl AgentView {
         let info = match &self.prompt_mode {
             PromptMode::Normal => PromptInfo {
                 model_name: &model_label,
+                model_provider: self.session.models.current_provider(),
                 flags: mode_flags,
                 multiline,
                 usage_warning,
@@ -2563,6 +2571,7 @@ impl AgentView {
                 editing_label = format!("editing queued #{pos}");
                 PromptInfo {
                     model_name: &editing_label,
+                    model_provider: None,
                     flags: mode_flags,
                     multiline,
                     usage_warning,
@@ -2573,6 +2582,7 @@ impl AgentView {
         let info = if let Some(label) = self.prompt_input_mode.prompt_info_override() {
             PromptInfo {
                 model_name: label,
+                model_provider: None,
                 flags: &[],
                 multiline: false,
                 usage_warning,

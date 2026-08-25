@@ -74,6 +74,36 @@ impl ModelState {
         }
     }
 
+    pub fn provider_for(&self, id: &acp::ModelId) -> Option<&str> {
+        self.available
+            .get(id)?
+            .meta
+            .as_ref()?
+            .get("provider")?
+            .as_str()
+    }
+
+    pub fn current_provider(&self) -> Option<&str> {
+        self.provider_for(self.current.as_ref()?)
+    }
+
+    /// Whether the current model advertises support for Codex Fast Mode.
+    pub fn current_model_supports_fast_mode(&self) -> bool {
+        self.current
+            .as_ref()
+            .is_some_and(|id| self.model_supports_fast_mode(id))
+    }
+
+    /// Whether a catalog model advertises support for Codex Fast Mode.
+    pub fn model_supports_fast_mode(&self, id: &acp::ModelId) -> bool {
+        self.available
+            .get(id)
+            .and_then(|info| info.meta.as_ref())
+            .and_then(|meta| meta.get("supportsFastMode"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }
+
     /// Machine-readable model ID string for the current model (e.g. "grok-4.5").
     pub fn current_model_id_str(&self) -> Option<&str> {
         Some(self.current.as_ref()?.0.as_ref())
@@ -335,6 +365,24 @@ mod tests {
     }
 
     #[test]
+    fn test_current_provider() {
+        let mut state = sample_models();
+        assert_eq!(state.current_provider(), None);
+
+        let id = acp::ModelId::new(Arc::from("model-a"));
+        state.available.insert(
+            id.clone(),
+            acp::ModelInfo::new(id.clone(), "Model A".to_string()).meta(
+                serde_json::json!({ "provider": "xAI" })
+                    .as_object()
+                    .cloned(),
+            ),
+        );
+        assert_eq!(state.current_provider(), Some("xAI"));
+        assert_eq!(state.provider_for(&id), Some("xAI"));
+    }
+
+    #[test]
     fn test_next_model_cycles() {
         let state = sample_models();
         let next = state.next_model().unwrap();
@@ -355,6 +403,22 @@ mod tests {
         assert!(state.is_empty());
         assert!(state.current_model_name().is_none());
         assert!(state.next_model().is_none());
+    }
+
+    #[test]
+    fn current_model_reads_fast_mode_capability() {
+        let id = acp::ModelId::new(Arc::from("chatgpt/gpt-5.4"));
+        let mut state = ModelState::default();
+        state.available.insert(
+            id.clone(),
+            acp::ModelInfo::new(id.clone(), "GPT-5.4".to_string()).meta(
+                serde_json::json!({ "supportsFastMode": true })
+                    .as_object()
+                    .cloned(),
+            ),
+        );
+        state.current = Some(id);
+        assert!(state.current_model_supports_fast_mode());
     }
 
     fn state_with_meta(meta: Option<serde_json::Value>) -> ModelState {

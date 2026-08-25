@@ -1041,6 +1041,7 @@ fn test_model_entry(
             model: model.to_string(),
             base_url: base_url.to_string(),
             name: None,
+            provider: None,
             description: None,
             max_completion_tokens: None,
             temperature: None,
@@ -1062,6 +1063,7 @@ fn test_model_entry(
             supported_in_api: true,
             reasoning_effort: None,
             supports_reasoning_effort: false,
+            supports_fast_mode: false,
             reasoning_efforts: Vec::new(),
             supports_backend_search: false,
             compactions_remaining: None,
@@ -2115,6 +2117,7 @@ fn model_info_from_config_propagates_use_concise() {
         model: "test".to_string(),
         base_url: "https://test.api/v1".to_string(),
         name: None,
+        provider: None,
         description: None,
         max_completion_tokens: None,
         temperature: None,
@@ -2276,6 +2279,7 @@ fn model_info_from_config_propagates_agent_type() {
         model: "test".to_string(),
         base_url: "https://test.api/v1".to_string(),
         name: None,
+        provider: None,
         description: None,
         max_completion_tokens: None,
         temperature: None,
@@ -2338,6 +2342,59 @@ fn acp_model_meta_always_includes_agent_type() {
         meta["agentType"], DEFAULT_AGENT_TYPE,
         "agentType should always be in meta, defaulting to DEFAULT_AGENT_TYPE"
     );
+}
+#[test]
+fn acp_model_meta_always_includes_provider() {
+    let mut models = IndexMap::new();
+    let mut entry = test_model_entry("plain-model", "", None, None, None);
+    entry.info.name = Some("Plain Model".to_string());
+    models.insert("plain-model".to_string(), entry);
+    let acp_models = to_acp_model_info(&models);
+    let meta = acp_models
+        .values()
+        .next()
+        .unwrap()
+        .meta
+        .as_ref()
+        .expect("meta should be present");
+    assert_eq!(meta["provider"], "xAI");
+
+    let mut models = IndexMap::new();
+    let entry = test_model_entry("xai-model", "https://api.x.ai/v1", None, None, None);
+    models.insert("xai-model".to_string(), entry);
+    let acp_models = to_acp_model_info(&models);
+    let meta = acp_models
+        .values()
+        .next()
+        .unwrap()
+        .meta
+        .as_ref()
+        .expect("meta should be present");
+    assert_eq!(meta["provider"], "xAI");
+}
+#[test]
+fn acp_model_meta_emits_fast_mode_capability() {
+    let mut entry = test_model_entry(
+        "gpt-5.4",
+        "https://chatgpt.com/backend-api/codex",
+        None,
+        None,
+        None,
+    );
+    entry.info.supports_fast_mode = true;
+    let mut models = IndexMap::new();
+    models.insert("chatgpt/gpt-5.4".to_string(), entry);
+
+    let acp_models = to_acp_model_info(&models);
+    let meta = acp_models
+        .values()
+        .next()
+        .unwrap()
+        .meta
+        .as_ref()
+        .expect("meta should be present");
+
+    assert_eq!(meta["supportsFastMode"], true);
 }
 #[test]
 fn acp_model_meta_emits_reasoning_effort_when_supported() {
@@ -2729,6 +2786,7 @@ fn inference_idle_timeout_propagates_to_model_info() {
         model: "test".to_string(),
         base_url: "https://test.api/v1".to_string(),
         name: None,
+        provider: None,
         description: None,
         max_completion_tokens: None,
         temperature: None,
@@ -6715,6 +6773,7 @@ fn prefetch_model_entry(slug: &str, context_window: u64, api_backend: ApiBackend
             model: slug.to_owned(),
             base_url: "https://test.example.com/v1".to_owned(),
             name: Some(slug.to_owned()),
+            provider: None,
             description: None,
             max_completion_tokens: None,
             temperature: None,
@@ -6734,6 +6793,7 @@ fn prefetch_model_entry(slug: &str, context_window: u64, api_backend: ApiBackend
             supported_in_api: true,
             reasoning_effort: None,
             supports_reasoning_effort: false,
+            supports_fast_mode: false,
             reasoning_efforts: Vec::new(),
             supports_backend_search: false,
             compactions_remaining: None,

@@ -1462,6 +1462,16 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             app.welcome_prompt_focused = false;
             effects
         }
+        TaskResult::ConnectProviderComplete {
+            provider: _,
+            message,
+        } => {
+            match message {
+                Ok(msg) => app.show_toast(&msg),
+                Err(err) => app.show_toast(&err),
+            }
+            vec![]
+        }
         TaskResult::DeepSearchResults {
             host,
             generation,

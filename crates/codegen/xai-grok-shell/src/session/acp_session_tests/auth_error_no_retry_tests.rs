@@ -120,6 +120,35 @@ async fn make_actor_with_method_and_credentials(
     (Arc::new(actor), persistence_rx)
 }
 
+/// Route a test actor to an endpoint whose bearer token belongs to that
+/// provider, while preserving the `NotByok` lookup result that caused the
+/// original collision with the ambient xAI session auth.
+async fn route_actor_to_provider(actor: &Arc<SessionActor>, base_url: &str, api_key: &str) {
+    let mut config = actor
+        .chat_state_handle
+        .get_sampling_config()
+        .await
+        .expect("test actor sampling config");
+    config.model = "gpt-5.6-sol".to_string();
+    config.base_url = base_url.to_string();
+    actor.chat_state_handle.update_sampling_config(config);
+    actor
+        .chat_state_handle
+        .update_credentials(xai_chat_state::Credentials {
+            api_key: Some(api_key.to_string()),
+            auth_type: xai_chat_state::AuthType::ApiKey,
+            ..Default::default()
+        });
+    actor.model_auth_memo.replace(Some(ModelAuthMemo {
+        model_id: "gpt-5.6-sol".to_string(),
+        facts: crate::agent::config::ModelAuthFacts {
+            byok: crate::agent::auth_method::ModelByok::NotByok,
+            auth_scheme: Default::default(),
+        },
+        provider: None,
+    }));
+}
+
 /// `(tempdir, manager)` holding a valid OIDC token (so `get_valid_token()` is a
 /// cache hit). The tempdir must outlive the manager (auth.json path).
 fn auth_manager_with_valid_token(key: &str) -> (tempfile::TempDir, Arc<AuthManager>) {
@@ -912,6 +941,92 @@ async fn reconstruct_full_config_no_bearer_resolver_for_api_key_method() {
             assert!(
                 cfg.bearer_resolver.is_none(),
                 "api-key method must keep its configured bearer (no live resolver)"
+            );
+        })
+        .await;
+}
+
+/// Provider credentials are an explicit auth boundary. A ChatGPT access token
+/// must stay on the request even when this process also has a live xAI OIDC
+/// session and the routing slug collides with a bundled `NotByok` model.
+#[tokio::test(flavor = "current_thread")]
+async fn chatgpt_provider_does_not_inherit_ambient_xai_bearer() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (_dir, am) = auth_manager_with_valid_token("ambient-xai-session-token");
+            let (actor, _rx) = make_actor_with_method_and_credentials(
+                Some(am),
+                "cached_token",
+                xai_chat_state::AuthType::ApiKey,
+                "provider-access-token".to_string(),
+            )
+            .await;
+            route_actor_to_provider(
+                &actor,
+                crate::providers::openai_subscribed::CODEX_BASE_URL,
+                "provider-access-token",
+            )
+            .await;
+
+            let config = actor.reconstruct_full_config().await;
+            assert!(
+                config.bearer_resolver.is_none(),
+                "provider-scoped auth must not inherit the ambient xAI bearer resolver"
+            );
+
+            actor.refresh_token_if_expired().await;
+            assert_eq!(
+                actor
+                    .chat_state_handle
+                    .get_credentials()
+                    .await
+                    .api_key
+                    .as_deref(),
+                Some("provider-access-token"),
+                "xAI pre-flight refresh must not overwrite provider credentials"
+            );
+        })
+        .await;
+}
+
+/// A provider 401 belongs to that provider. Retrying it through xAI's OIDC
+/// refresher cannot repair the request and previously produced three false
+/// "auth recovery succeeded" retries before surfacing the same 401.
+#[tokio::test(flavor = "current_thread")]
+async fn chatgpt_provider_401_does_not_trigger_xai_auth_recovery() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let called = Arc::new(AtomicBool::new(false));
+            let refresher: Arc<dyn crate::auth::refresh::TokenRefresher> =
+                Arc::new(AlwaysSucceedRefresher {
+                    called: called.clone(),
+                });
+            let (_dir, am) = auth_manager_with_refresher(refresher);
+            let (actor, _rx) = make_actor_with_method_and_credentials(
+                Some(am),
+                "cached_token",
+                xai_chat_state::AuthType::ApiKey,
+                "provider-access-token".to_string(),
+            )
+            .await;
+            route_actor_to_provider(
+                &actor,
+                crate::providers::openai_subscribed::CODEX_BASE_URL,
+                "provider-access-token",
+            )
+            .await;
+
+            let result = actor.handle_sampling_failure(auth_error(), 0).await;
+
+            assert!(
+                result.is_err(),
+                "provider 401 must surface instead of requesting an xAI-auth retry"
+            );
+            assert!(
+                !called.load(Ordering::SeqCst),
+                "provider 401 must not invoke the xAI OIDC refresher"
             );
         })
         .await;

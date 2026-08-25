@@ -116,6 +116,12 @@ pub(crate) fn execute(
             let tx = acp_tx.clone();
             tasks.spawn(async move { send_auth_cancel(&tx, request_seq).await });
         }
+        Effect::ConnectProvider { provider, api_key } => {
+            let tx = acp_tx.clone();
+            tasks.spawn(async move {
+                send_connect_provider(&tx, provider, api_key).await
+            });
+        }
         Effect::CheckSubscription { verify } => {
             let tx = acp_tx.clone();
             tasks.spawn(async move { send_check_subscription(&tx, verify).await });

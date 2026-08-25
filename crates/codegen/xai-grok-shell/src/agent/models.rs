@@ -566,6 +566,21 @@ impl ModelsManager {
             .unwrap_or(false)
     }
 
+    /// Whether the given model accepts the Responses API priority service tier.
+    pub fn model_supports_fast_mode(&self, model_id: &str) -> bool {
+        self.with_catalog_entry(model_id, |entry| entry.info().supports_fast_mode)
+            .unwrap_or(false)
+    }
+
+    /// Whether Fast Mode is enabled and supported by the active model.
+    pub fn fast_mode_enabled_for_current_model(&self) -> bool {
+        if !self.inner.cfg.read().ui.codex_fast_mode.unwrap_or(false) {
+            return false;
+        }
+        let current = self.current_model_id();
+        self.model_supports_fast_mode(current.0.as_ref())
+    }
+
     /// The model's catalog default reasoning effort.
     pub(crate) fn model_default_reasoning_effort(&self, model_id: &str) -> Option<ReasoningEffort> {
         self.with_catalog_entry(model_id, |e| e.info().reasoning_effort)

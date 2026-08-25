@@ -315,6 +315,8 @@ pub struct PromptFlag<'a> {
 pub struct PromptInfo<'a> {
     /// Primary label to display on the info line (left side).
     pub model_name: &'a str,
+    /// Optional provider shown after the model name in muted text (e.g. "xAI").
+    pub model_provider: Option<&'a str>,
     /// Flags to display on the left side, joined by " · " (e.g., "plan", "always-approve").
     pub flags: &'a [PromptFlag<'a>],
     /// Whether multiline mode is active (shown right-aligned).
@@ -3577,6 +3579,17 @@ impl PromptWidget {
             left_spans.push(Span::styled(" · ", sep_style));
         }
         left_spans.push(Span::styled(info.model_name, model_style));
+        if let Some(provider) = info.model_provider.filter(|p| !p.is_empty()) {
+            let provider_fg = if focused {
+                theme.gray_dim
+            } else {
+                crate::render::color::blend_color(bg, theme.gray_dim, sep_opacity)
+                    .unwrap_or(theme.gray_dim)
+            };
+            let provider_style = Style::default().fg(provider_fg).bg(bg);
+            left_spans.push(Span::styled(" ", pad_style));
+            left_spans.push(Span::styled(provider, provider_style));
+        }
         for flag in info.flags {
             left_spans.push(Span::styled(" · ", sep_style));
             let mut style = if let Some(color) = flag.color {

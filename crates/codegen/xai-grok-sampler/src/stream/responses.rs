@@ -248,6 +248,7 @@ pub(crate) fn stream_responses_tracked<'a>(
         let mut chunk_index: u64 = 0;
         let mut message_chunk_count: u64 = 0;
         let mut first_token_emitted = false;
+        let mut content_acc = String::new();
         let mut reasoning_acc = String::new();
         let mut last_content_chunk_at = Instant::now();
 
@@ -337,6 +338,7 @@ pub(crate) fn stream_responses_tracked<'a>(
                         chunk_timestamps.push(Instant::now());
                         chunk_index += 1;
                         message_chunk_count += 1;
+                        content_acc.push_str(&delta);
                         yield SamplingEvent::ChannelToken {
                             request_id: request_id.clone(),
                             channel: SamplingChannel::Text,
@@ -653,6 +655,21 @@ pub(crate) fn stream_responses_tracked<'a>(
         // Splice policy lives in `inject_streaming_reasoning_fallback`.
         let mut items = xai_grok_sampling_types::response_to_conversation_items(response);
         xai_grok_sampling_types::inject_streaming_reasoning_fallback(&mut items, reasoning_acc);
+        if !content_acc.is_empty()
+            && !items.iter().any(|item| {
+                matches!(item, ConversationItem::Assistant(assistant) if !assistant.content.is_empty())
+            })
+        {
+            if let Some(ConversationItem::Assistant(assistant)) = items
+                .iter_mut()
+                .rev()
+                .find(|item| matches!(item, ConversationItem::Assistant(_)))
+            {
+                assistant.content = std::sync::Arc::<str>::from(content_acc);
+            } else {
+                items.push(ConversationItem::assistant(content_acc));
+            }
+        }
 
         let has_tool_calls = items.iter().any(|i| match i {
             ConversationItem::Assistant(a) => !a.tool_calls.is_empty(),
@@ -908,6 +925,11 @@ mod tests {
         match events.last().unwrap() {
             SamplingEvent::Completed { response, .. } => {
                 assert_eq!(response.stop_reason, Some(StopReason::Stop));
+                assert!(response.items.iter().any(|item| matches!(
+                    item,
+                    ConversationItem::Assistant(assistant)
+                        if assistant.content.as_ref() == "hello"
+                )));
             }
             other => panic!("expected Completed, got {other:?}"),
         }

@@ -1868,6 +1868,87 @@ pub(in crate::app::dispatch) fn clear_default_model(app: &mut AppView) -> Vec<Ef
 }
 
 // ---------------------------------------------------------------------------
+// Connected-provider visibility and ChatGPT Fast Mode.
+// ---------------------------------------------------------------------------
+
+pub(super) fn set_show_openrouter_models_inner(app: &mut AppView, value: bool) {
+    app.current_ui.show_openrouter_models = Some(value);
+}
+
+pub(super) fn set_show_chatgpt_models_inner(app: &mut AppView, value: bool) {
+    app.current_ui.show_chatgpt_models = Some(value);
+}
+
+pub(super) fn set_codex_fast_mode_inner(app: &mut AppView, value: bool) {
+    app.current_ui.codex_fast_mode = Some(value);
+    crate::app::agent_view::set_codex_fast_mode_enabled(value);
+}
+
+fn set_model_bool_setting(
+    app: &mut AppView,
+    key: crate::settings::SettingKey,
+    label: &str,
+    previous: bool,
+    new: bool,
+    apply: fn(&mut AppView, bool),
+) -> Vec<Effect> {
+    if previous == new {
+        return vec![];
+    }
+    apply(app, new);
+    refresh_open_settings_modals(app);
+    tracing::info!(target: "settings", key, value = new, "setting changed");
+    app.show_toast(&save_success_toast(label, new));
+    vec![Effect::PersistSetting {
+        key,
+        value: crate::settings::SettingValue::Bool(new),
+        rollback_value: crate::settings::SettingValue::Bool(previous),
+    }]
+}
+
+pub(in crate::app::dispatch) fn set_show_openrouter_models(
+    app: &mut AppView,
+    new: bool,
+) -> Vec<Effect> {
+    let previous = app.current_ui.show_openrouter_models.unwrap_or(true);
+    set_model_bool_setting(
+        app,
+        "show_openrouter_models",
+        "OpenRouter models",
+        previous,
+        new,
+        set_show_openrouter_models_inner,
+    )
+}
+
+pub(in crate::app::dispatch) fn set_show_chatgpt_models(
+    app: &mut AppView,
+    new: bool,
+) -> Vec<Effect> {
+    let previous = app.current_ui.show_chatgpt_models.unwrap_or(true);
+    set_model_bool_setting(
+        app,
+        "show_chatgpt_models",
+        "ChatGPT models",
+        previous,
+        new,
+        set_show_chatgpt_models_inner,
+    )
+}
+
+pub(in crate::app::dispatch) fn set_codex_fast_mode(app: &mut AppView, new: bool) -> Vec<Effect> {
+    let previous = app.current_ui.codex_fast_mode.unwrap_or(false);
+    set_model_bool_setting(
+        app,
+        "codex_fast_mode",
+        "Codex fast mode",
+        previous,
+        new,
+        set_codex_fast_mode_inner,
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Model-family settings: fork_secondary_model (and formerly
 // web_search_model, session_summary_model, default_reasoning_effort).
 //

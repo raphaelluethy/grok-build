@@ -261,6 +261,8 @@ pub fn render_dashboard(
                     }
                     if let Some(p) = state.peek.as_mut() {
                         p.model_name = badge.model;
+                        p.model_provider = badge.provider;
+                        p.fast_supported = badge.fast_supported;
                         p.auto_approve = badge.yolo;
                         p.auto = badge.auto;
                         p.plan_mode = badge.plan;
@@ -2851,6 +2853,12 @@ fn paint_dispatch_config_badge(
         .or_else(|| state.models.current_model_name())
         .unwrap_or_default();
 
+    let model_provider = state
+        .pending_model
+        .as_ref()
+        .and_then(|m| state.models.provider_for(&m.id))
+        .or_else(|| state.models.current_provider());
+
     // Mode flag, styled exactly like the chat prompt's mode flags.
     let mut flags: Vec<PromptFlag> = Vec::new();
     match state.pending_mode {
@@ -2871,6 +2879,18 @@ fn paint_dispatch_config_badge(
         }),
         DashboardDispatchMode::Normal => {}
     }
+    let fast_supported = state
+        .pending_model
+        .as_ref()
+        .map(|model| state.models.model_supports_fast_mode(&model.id))
+        .unwrap_or_else(|| state.models.current_model_supports_fast_mode());
+    if crate::app::agent_view::codex_fast_mode_enabled() && fast_supported {
+        flags.push(PromptFlag {
+            text: "fast",
+            color: Some(theme.accent_system),
+            bold: false,
+        });
+    }
 
     if model_label.is_empty() && flags.is_empty() && !state.multiline_mode {
         return;
@@ -2878,6 +2898,7 @@ fn paint_dispatch_config_badge(
 
     let info = PromptInfo {
         model_name: &model_label,
+        model_provider,
         flags: &flags,
         multiline: state.multiline_mode,
         usage_warning: None,

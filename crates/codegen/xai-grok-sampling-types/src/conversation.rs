@@ -611,6 +611,8 @@ pub struct ConversationRequest {
     pub max_output_tokens: Option<u32>,
     /// Top-p sampling
     pub top_p: Option<f32>,
+    /// Optional Responses API service tier (for example priority/fast mode).
+    pub service_tier: Option<rs::ServiceTier>,
     /// Custom headers for xAI tracking
     pub x_grok_conv_id: Option<String>,
     pub x_grok_req_id: Option<String>,

@@ -591,6 +591,11 @@ pub enum Action {
     /// session and persists via `Effect::PersistSetting`. Does not
     /// carry effort — use `Action::SwitchModel` for that.
     SetDefaultModel(acp::ModelId),
+    /// Include or hide connected-provider models without removing credentials.
+    SetShowOpenRouterModels(bool),
+    SetShowChatGptModels(bool),
+    /// Request the priority service tier for compatible ChatGPT models.
+    SetCodexFastMode(bool),
     /// Clear the persisted default model (`cfg.models.default = None`).
     /// Active session's model is unchanged; next session resolves
     /// via the shell's default-resolution chain.
@@ -669,6 +674,11 @@ pub enum Action {
     SwitchAccount,
     /// User pressed login on the welcome screen.
     Login,
+    /// Connect a third-party model provider (OpenRouter or ChatGPT).
+    ConnectProvider {
+        provider: String,
+        api_key: Option<String>,
+    },
     /// Cancel an in-progress login that was started from inside a session
     /// (`/login` or a 401 re-auth prompt) and return to the previous view.
     /// Distinct from `Quit`: abandoning a mid-session re-auth must not exit
@@ -2076,6 +2086,11 @@ pub enum Effect {
     /// poll stops instead of running until the code expires. `request_seq`
     /// scopes the cancel so a delayed RPC cannot tear down a successor login.
     CancelAuth { request_seq: u64 },
+    /// Connect a third-party model provider via `x.ai/providers/connect`.
+    ConnectProvider {
+        provider: String,
+        api_key: Option<String>,
+    },
     /// Re-check subscription status via `x.ai/auth/check_subscription`.
     /// `verify` scopes the result to a deferred-gate verification (see
     /// [`crate::app::subscription`]); `None` for generic checks.
@@ -2980,6 +2995,11 @@ pub enum TaskResult {
     LogoutComplete,
     /// Best-effort `x.ai/auth/cancel` finished (no UI update; state already left Authenticating).
     AuthCancelComplete,
+    /// Third-party provider connect finished (`x.ai/providers/connect`).
+    ConnectProviderComplete {
+        provider: String,
+        message: Result<String, String>,
+    },
     /// Shell responded to `x.ai/auth/check_subscription`. `verify` echoes
     /// the generation from `Effect::CheckSubscription` for deferred-gate
     /// verifications.

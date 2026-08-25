@@ -33,6 +33,9 @@ use xai_grok_sampling_types::{
 
 use crate::config::{AuthScheme, OriginClientInfo, SamplerConfig};
 use crate::events::SamplingErrorInfo;
+use crate::responses_websocket::{
+    ResponsesWebSocketAttempt, ResponsesWebSocketState, WebSocketRequestMetadata,
+};
 use xai_grok_auth::bearer_suffix;
 
 // Re-export ApiBackend from the shared types crate for downstream callers.
@@ -44,6 +47,60 @@ const DEFAULT_CLIENT_IDENTIFIER: &str = "grok-shell";
 /// Product identifier baked into User-Agent strings.
 const AGENT_PRODUCT: &str = "grok-shell";
 const ANTHROPIC_DEFAULT_MAX_TOKENS: u32 = 128_000;
+
+/// Apply provider-specific Responses API wire compatibility without changing
+/// the shared conversation representation.
+fn normalize_provider_response_body(base_url: &str, body: &mut serde_json::Value) {
+    let Ok(url) = reqwest::Url::parse(base_url.trim()) else {
+        return;
+    };
+    let path = url.path().trim_end_matches('/');
+    if !url
+        .host_str()
+        .is_some_and(|host| host.eq_ignore_ascii_case("chatgpt.com"))
+        || !(path == "/backend-api/codex" || path.starts_with("/backend-api/codex/"))
+    {
+        return;
+    }
+
+    let Some(input) = body
+        .get_mut("input")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    let mut moved_instructions = Vec::new();
+    input.retain(|item| {
+        if item.get("role").and_then(serde_json::Value::as_str) != Some("system") {
+            return true;
+        }
+        match item.get("content") {
+            Some(serde_json::Value::String(text)) => moved_instructions.push(text.clone()),
+            Some(serde_json::Value::Array(parts)) => {
+                moved_instructions.extend(parts.iter().filter_map(|part| {
+                    part.get("text")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned)
+                }));
+            }
+            _ => {}
+        }
+        false
+    });
+
+    let existing = body
+        .get("instructions")
+        .and_then(serde_json::Value::as_str)
+        .filter(|text| !text.is_empty());
+    let moved = moved_instructions.join("\n\n");
+    let instructions = match (moved.is_empty(), existing) {
+        (false, Some(existing)) => format!("{moved}\n\n{existing}"),
+        (false, None) => moved,
+        (true, Some(existing)) => existing.to_owned(),
+        (true, None) => String::new(),
+    };
+    body["instructions"] = serde_json::Value::String(instructions);
+}
 
 /// Per-request `x-grok-*` headers. Optional fields are skipped when empty/`None`.
 struct GrokRequestHeaders<'a> {
@@ -75,6 +132,33 @@ impl GrokRequestHeaders<'_> {
             b = b.header("x-grok-user-id", id);
         }
         b
+    }
+
+    fn apply_to_headers(&self, headers: &mut HeaderMap) {
+        for (name, value) in [
+            ("x-grok-conv-id", self.conv_id),
+            ("x-grok-req-id", self.req_id),
+            ("x-grok-model-override", self.model_id),
+            ("x-grok-session-id", self.session_id),
+            ("x-grok-agent-id", self.agent_id),
+        ] {
+            if !value.is_empty()
+                && let Ok(value) = HeaderValue::from_str(value)
+            {
+                headers.insert(HeaderName::from_static(name), value);
+            }
+        }
+        for (name, value) in [
+            ("x-grok-turn-idx", self.turn_idx),
+            ("x-grok-deployment-id", self.deployment_id),
+            ("x-grok-user-id", self.user_id),
+        ] {
+            if let Some(value) = value.filter(|value| !value.is_empty())
+                && let Ok(value) = HeaderValue::from_str(value)
+            {
+                headers.insert(HeaderName::from_static(name), value);
+            }
+        }
     }
 }
 
@@ -132,6 +216,39 @@ fn deserialize_response_event(data: &str) -> Result<rs::ResponseStreamEvent> {
     };
     apply_terminal_event_overrides(&mut event, data);
     Ok(event)
+}
+
+/// Decode one transport-neutral Responses stream payload. SSE event names are
+/// meaningful only for the HTTP transport; WebSocket frames carry the type in
+/// their JSON body and therefore pass an empty event name.
+fn decode_response_payload(
+    event_name: &str,
+    data: &str,
+    doom_loop: &Option<crate::doom_loop::DoomLoopSignalCollector>,
+    transport: &'static str,
+) -> Option<Result<rs::ResponseStreamEvent>> {
+    if data == "[DONE]" {
+        return None;
+    }
+
+    tracing::info!(
+        target: crate::sampling_log::TARGET,
+        event = "responses_chunk",
+        transport,
+        data = %data,
+    );
+
+    let swallow = match doom_loop {
+        Some(collector) => collector.absorb(event_name, data),
+        None => is_check_event(event_name, data),
+    };
+    if swallow {
+        None
+    } else if let Some(stream_error) = try_parse_stream_error(data) {
+        Some(Err(stream_error))
+    } else {
+        Some(deserialize_response_event(data))
+    }
 }
 
 /// On terminal Responses API events (`response.completed` /
@@ -370,6 +487,8 @@ pub struct SamplingClient {
     header_injector: Option<crate::config::SharedHeaderInjector>,
     /// Endpoint URL builder, resolved once from `base_url` + `query_params`.
     endpoint: EndpointTemplate,
+    /// Persistent Responses WebSocket connection and request-chain state.
+    responses_websocket: std::sync::Arc<ResponsesWebSocketState>,
 }
 
 impl std::fmt::Debug for SamplingClient {
@@ -382,6 +501,7 @@ impl std::fmt::Debug for SamplingClient {
                 &self.attribution_callback.is_some(),
             )
             .field("has_bearer_resolver", &self.bearer_resolver.is_some())
+            .field("responses_websocket", &self.responses_websocket)
             .finish()
     }
 }
@@ -397,6 +517,7 @@ struct ClientDefaults {
     stream_tool_calls: bool,
     extra_response_includes: Vec<String>,
     doom_loop_recovery: Option<xai_grok_sampling_types::DoomLoopRecoveryPolicy>,
+    responses_idle_timeout: std::time::Duration,
 }
 
 /// Endpoint URL builder, resolved once at client construction so each request
@@ -570,6 +691,19 @@ impl SamplingClient {
     /// pre-computes the default request headers. This does not perform
     /// any network I/O.
     pub fn new(config: SamplerConfig) -> Result<Self> {
+        let responses_websocket = std::sync::Arc::new(ResponsesWebSocketState::new(&config));
+        Self::new_with_websocket_state(config, responses_websocket)
+    }
+
+    pub(crate) fn new_with_websocket_state(
+        config: SamplerConfig,
+        responses_websocket: std::sync::Arc<ResponsesWebSocketState>,
+    ) -> Result<Self> {
+        let responses_websocket = if responses_websocket.matches_config(&config) {
+            responses_websocket
+        } else {
+            std::sync::Arc::new(ResponsesWebSocketState::new(&config))
+        };
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         if let Some(ref api_key) = config.api_key {
@@ -706,6 +840,9 @@ impl SamplingClient {
             stream_tool_calls: config.stream_tool_calls,
             extra_response_includes: config.extra_response_includes,
             doom_loop_recovery: config.doom_loop_recovery,
+            responses_idle_timeout: std::time::Duration::from_secs(
+                config.idle_timeout_secs.unwrap_or(300),
+            ),
         };
 
         let endpoint = EndpointTemplate::new(&config.base_url, &config.query_params);
@@ -719,6 +856,7 @@ impl SamplingClient {
             bearer_resolver: config.bearer_resolver,
             header_injector: config.header_injector,
             endpoint,
+            responses_websocket,
         })
     }
 
@@ -727,15 +865,22 @@ impl SamplingClient {
         self.defaults.api_backend.clone()
     }
 
-    /// POST with default headers, returning the builder coupled to the tail
-    /// fragment of the credential actually placed in its headers (`None` =
-    /// no credential) — captured at build time because a record-time
-    /// re-read races with the recovery a 401 triggers.
-    ///
-    /// A wired bearer_resolver is the sole auth source: a missing live
-    /// bearer strips default Authorization / x-api-key so a hard-expired
-    /// seed key cannot ride on the wire.
-    fn post(&self, url: impl reqwest::IntoUrl) -> SentRequest {
+    pub(crate) fn responses_websocket_state(&self) -> std::sync::Arc<ResponsesWebSocketState> {
+        self.responses_websocket.clone()
+    }
+
+    pub(crate) async fn try_switch_fallback_transport(&self) -> bool {
+        if !self
+            .responses_websocket
+            .enabled_for(&self.base_url, &self.defaults.api_backend)
+        {
+            return false;
+        }
+        self.responses_websocket.force_http_fallback().await
+    }
+
+    /// Build the default request headers, using the live bearer resolver when wired.
+    fn request_headers(&self) -> HeaderMap {
         let mut headers = self.default_headers.clone();
         if let Some(resolver) = &self.bearer_resolver {
             headers.remove(AUTHORIZATION);
@@ -755,33 +900,39 @@ impl SamplingClient {
                 }
             }
         }
-        {
-            let auth_prefix = headers
-                .get(AUTHORIZATION)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.chars().take(20).collect::<String>());
-            let x_api_key_prefix = headers
-                .get(HeaderName::from_static("x-api-key"))
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.chars().take(12).collect::<String>());
-            tracing::info!(
-                target: crate::sampling_log::TARGET,
-                event = "client_post",
-                base_url = %self.base_url,
-                model = %self.defaults.model,
-                api_backend = ?self.defaults.api_backend,
-                auth_scheme = ?self.defaults.auth_scheme,
-                has_bearer_resolver = self.bearer_resolver.is_some(),
-                has_authorization_header = headers.get(AUTHORIZATION).is_some(),
-                has_x_api_key_header = headers.get(HeaderName::from_static("x-api-key")).is_some(),
-                auth_header_prefix = auth_prefix.as_deref().unwrap_or("none"),
-                x_api_key_prefix = x_api_key_prefix.as_deref().unwrap_or("none"),
-            );
-        }
-        let sent_bearer = Self::sent_fragment_from_headers(&headers, &self.defaults.auth_scheme);
         if let Some(injector) = &self.header_injector {
             injector.inject(&mut headers);
         }
+        headers
+    }
+
+    /// POST with default headers, returning the builder coupled to the tail
+    /// fragment of the credential actually placed in its headers (`None` =
+    /// no credential). Capturing this at build time avoids racing auth recovery.
+    fn post(&self, url: impl reqwest::IntoUrl) -> SentRequest {
+        let headers = self.request_headers();
+        let auth_prefix = headers
+            .get(AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.chars().take(20).collect::<String>());
+        let x_api_key_prefix = headers
+            .get(HeaderName::from_static("x-api-key"))
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.chars().take(12).collect::<String>());
+        tracing::info!(
+            target: crate::sampling_log::TARGET,
+            event = "client_post",
+            base_url = %self.base_url,
+            model = %self.defaults.model,
+            api_backend = ?self.defaults.api_backend,
+            auth_scheme = ?self.defaults.auth_scheme,
+            has_bearer_resolver = self.bearer_resolver.is_some(),
+            has_authorization_header = headers.get(AUTHORIZATION).is_some(),
+            has_x_api_key_header = headers.get(HeaderName::from_static("x-api-key")).is_some(),
+            auth_header_prefix = auth_prefix.as_deref().unwrap_or("none"),
+            x_api_key_prefix = x_api_key_prefix.as_deref().unwrap_or("none"),
+        );
+        let sent_bearer = Self::sent_fragment_from_headers(&headers, &self.defaults.auth_scheme);
         SentRequest {
             builder: self.http.post(url).headers(headers),
             sent_bearer,
@@ -1268,6 +1419,7 @@ impl SamplingClient {
         // it in post-serialize. This is the last surviving piece of the
         // old raw_output machinery.
         xai_grok_sampling_types::patch_reasoning_text_types(&mut request_body);
+        normalize_provider_response_body(&self.base_url, &mut request_body);
         let SentRequest {
             builder,
             sent_bearer,
@@ -1404,12 +1556,116 @@ impl SamplingClient {
         splice_extra_tool_entries(&mut request_body, extra_tool_entries);
         append_response_includes(&mut request_body, &self.defaults.extra_response_includes);
         xai_grok_sampling_types::patch_reasoning_text_types(&mut request_body);
+        normalize_provider_response_body(&self.base_url, &mut request_body);
         // Fresh per attempt so signals never leak across retries; `None`
         // (check disabled) sends no header and does no peek work per event.
         let doom_loop = self
             .defaults
             .doom_loop_recovery
             .map(crate::doom_loop::DoomLoopSignalCollector::new);
+        if self
+            .responses_websocket
+            .enabled_for(&self.base_url, &self.defaults.api_backend)
+        {
+            let mut websocket_headers = self.request_headers();
+            let websocket_sent_bearer =
+                Self::sent_fragment_from_headers(&websocket_headers, &self.defaults.auth_scheme);
+            grok_headers.apply_to_headers(&mut websocket_headers);
+            if let Some(policy) = self.defaults.doom_loop_recovery {
+                websocket_headers.insert(
+                    HeaderName::from_static(DOOM_LOOP_CHECK_HEADER),
+                    HeaderValue::from_str(&policy.window_tokens.to_string())
+                        .expect("window token count is a valid header value"),
+                );
+            }
+            let websocket_metadata = WebSocketRequestMetadata {
+                conversation_id: x_grok_conv_id.to_owned(),
+                request_id: x_grok_req_id.to_owned(),
+                session_id: request
+                    .x_grok_session_id
+                    .clone()
+                    .unwrap_or_else(|| x_grok_conv_id.to_owned()),
+                turn_id: request.x_grok_turn_idx.clone(),
+            };
+            match self
+                .responses_websocket
+                .stream(
+                    &self.base_url,
+                    request_body.clone(),
+                    websocket_headers,
+                    websocket_metadata,
+                    self.defaults.responses_idle_timeout,
+                )
+                .await
+            {
+                Ok(ResponsesWebSocketAttempt::Stream {
+                    raw_events,
+                    response_headers,
+                    connection_reused,
+                }) => {
+                    tracing::debug!(
+                        base_url = %self.base_url,
+                        model_id = model_id.as_str(),
+                        connection_reused,
+                        "Responses WebSocket stream started"
+                    );
+                    let model_metadata = extract_model_metadata(&response_headers);
+                    let doom_loop_for_stream = doom_loop.clone();
+                    let attribution_callback = self.attribution_callback.clone();
+                    let sent_bearer_for_stream = websocket_sent_bearer.clone();
+                    let events = raw_events
+                        .filter_map(move |event| {
+                            let decoded = match event {
+                                Ok(data) => decode_response_payload(
+                                    "",
+                                    &data,
+                                    &doom_loop_for_stream,
+                                    "websocket",
+                                ),
+                                Err(error) if error.is_auth_error() => {
+                                    if let Some(callback) = attribution_callback.as_ref() {
+                                        callback.record_401(
+                                            crate::attribution::SamplingConsumer::ResponsesStream,
+                                            sent_bearer_for_stream.as_deref(),
+                                        );
+                                    }
+                                    Some(Err(auth_rejected(
+                                        error.to_string(),
+                                        sent_bearer_for_stream.as_deref(),
+                                    )))
+                                }
+                                Err(error) => Some(Err(error)),
+                            };
+                            std::future::ready(decoded)
+                        })
+                        .boxed();
+                    return Ok((events, model_metadata, doom_loop));
+                }
+                Ok(ResponsesWebSocketAttempt::FallbackToHttp) => {
+                    tracing::info!(
+                        target: crate::sampling_log::TARGET,
+                        event = "responses_transport",
+                        transport = "http_sse",
+                        reason = "websocket_unavailable",
+                        "streaming Responses API request over HTTP/SSE"
+                    );
+                }
+                Err(error) => {
+                    if error.is_auth_error() {
+                        self.record_401_attribution(
+                            crate::attribution::SamplingConsumer::ResponsesStream,
+                            websocket_sent_bearer.as_deref(),
+                        );
+                        return Err(auth_rejected(
+                            error.to_string(),
+                            websocket_sent_bearer.as_deref(),
+                        ));
+                    }
+                    return Err(error);
+                }
+            }
+        }
+
         let SentRequest {
             builder,
             sent_bearer,
@@ -1520,30 +1776,12 @@ impl SamplingClient {
                             return std::future::ready(None);
                         }
 
-                        tracing::info!(
-                            target: crate::sampling_log::TARGET,
-                            event = "sse_chunk",
-                            backend = "responses",
-                            data = %data,
-                        );
-
-                        // Intercept the non-standard doom-loop event before
-                        // typed deserialization; async-openai's event enum
-                        // does not know it and would fail to parse it. With
-                        // the check disabled, the shared name-or-payload-type
-                        // predicate guards against a server emitting it
-                        // despite no opt-in (rollout skew), named or not.
-                        let swallow = match &doom_loop_for_stream {
-                            Some(collector) => collector.absorb(&event.event, data),
-                            None => is_check_event(&event.event, data),
-                        };
-                        if swallow {
-                            Some(None)
-                        } else if let Some(stream_error) = try_parse_stream_error(data) {
-                            Some(Some(Err(stream_error)))
-                        } else {
-                            Some(Some(deserialize_response_event(data)))
-                        }
+                        Some(decode_response_payload(
+                            &event.event,
+                            data,
+                            &doom_loop_for_stream,
+                            "sse",
+                        ))
                     }
                     Err(e) => {
                         *had_transport_error = true;
@@ -2248,6 +2486,39 @@ mod tests {
             doom_loop_recovery: None,
             header_injector: None,
         }
+    }
+
+    #[test]
+    fn chatgpt_codex_uses_instructions_instead_of_system_input_messages() {
+        let mut body = serde_json::json!({
+            "instructions": null,
+            "input": [
+                {"type": "message", "role": "system", "content": "You are helpful."},
+                {"type": "message", "role": "user", "content": "Hello"}
+            ]
+        });
+
+        normalize_provider_response_body("https://chatgpt.com/backend-api/codex", &mut body);
+
+        assert_eq!(body["instructions"], "You are helpful.");
+        assert_eq!(body["input"].as_array().unwrap().len(), 1);
+        assert_eq!(body["input"][0]["role"], "user");
+    }
+
+    #[test]
+    fn other_responses_endpoints_keep_system_input_messages() {
+        let original = serde_json::json!({
+            "instructions": null,
+            "input": [
+                {"type": "message", "role": "system", "content": "You are helpful."},
+                {"type": "message", "role": "user", "content": "Hello"}
+            ]
+        });
+        let mut body = original.clone();
+
+        normalize_provider_response_body("https://openrouter.ai/api/v1", &mut body);
+
+        assert_eq!(body, original);
     }
 
     /// Verify the serialized shape of StreamingChatRequest matches the

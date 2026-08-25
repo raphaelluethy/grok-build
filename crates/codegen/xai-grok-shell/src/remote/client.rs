@@ -874,6 +874,7 @@ pub(crate) fn parse_remote_model_value(
         model_family,
         base_url,
         name,
+        provider: get_string(obj, "provider"),
         description: get_string(obj, "description"),
         max_completion_tokens: get_u64(obj, "maxCompletionTokens")
             .or_else(|| get_u64(obj, "max_completion_tokens"))

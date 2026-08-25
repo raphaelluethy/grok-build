@@ -12,6 +12,15 @@ pub struct UiConfig {
     /// Model ID to use for the secondary agent when forking.
     /// Defaults to the main default model (from default_models.json).
     pub fork_secondary_model: String,
+    /// Show models supplied by a connected OpenRouter account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_openrouter_models: Option<bool>,
+    /// Show models supplied by a connected ChatGPT subscription.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_chatgpt_models: Option<bool>,
+    /// Request the priority service tier for supported ChatGPT subscription models.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_fast_mode: Option<bool>,
     /// YOLO mode. Read by `util::config`, declared here for `serde_ignored`.
     #[serde(default)]
     pub yolo: bool,
@@ -264,6 +273,9 @@ impl Default for UiConfig {
             max_thoughts_width: DEFAULT_MAX_THOUGHTS_WIDTH,
             theme: None,
             fork_secondary_model: xai_grok_models::default_model().to_string(),
+            show_openrouter_models: None,
+            show_chatgpt_models: None,
+            codex_fast_mode: None,
             yolo: false,
             ui_theme: None,
             compact_mode: false,

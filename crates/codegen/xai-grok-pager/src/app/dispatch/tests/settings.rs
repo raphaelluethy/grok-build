@@ -1623,6 +1623,15 @@ fn move_setting_away_from_default(app: &mut AppView, key: crate::settings::Setti
                 agent.session.models.set_current(id, None);
             }
         }
+        "show_openrouter_models" => {
+            let _ = dispatch(Action::SetShowOpenRouterModels(false), app);
+        }
+        "show_chatgpt_models" => {
+            let _ = dispatch(Action::SetShowChatGptModels(false), app);
+        }
+        "codex_fast_mode" => {
+            let _ = dispatch(Action::SetCodexFastMode(true), app);
+        }
         "max_thoughts_width" => {
             let _ = dispatch(Action::SetMaxThoughtsWidth(200), app);
         }

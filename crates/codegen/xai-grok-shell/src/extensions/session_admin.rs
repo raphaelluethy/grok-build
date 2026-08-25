@@ -814,6 +814,9 @@ fn handle_reload_models(agent: &MvpAgent) -> ExtResult {
         let mut agent_config = agent.cfg.borrow_mut();
         agent_config.models = toml_config.models.clone();
         agent_config.config_models = toml_config.config_models.clone();
+        agent_config.ui.show_openrouter_models = toml_config.ui.show_openrouter_models;
+        agent_config.ui.show_chatgpt_models = toml_config.ui.show_chatgpt_models;
+        agent_config.ui.codex_fast_mode = toml_config.ui.codex_fast_mode;
         agent_config.web_search_model = overrides.web_search;
         agent_config.session_summary_model = overrides.session_summary;
         agent_config.image_description_model = overrides.image_description;

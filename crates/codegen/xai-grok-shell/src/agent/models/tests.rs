@@ -2028,6 +2028,7 @@ fn make_entry_config_with_id(
         model: model.to_owned(),
         base_url: "https://test.api/v1".to_owned(),
         name: name.map(|n| n.to_owned()),
+        provider: None,
         description: None,
         max_completion_tokens: None,
         temperature: None,

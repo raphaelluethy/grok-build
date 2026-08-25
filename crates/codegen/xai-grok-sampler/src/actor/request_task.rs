@@ -27,6 +27,7 @@ use crate::config::{RetryPolicy, SamplerConfig};
 use crate::doom_loop_recovery::{FailedResponseCapture, append_recovery_context};
 use crate::events::{SamplingErrorInfo, SamplingErrorKind, SamplingEvent, StripReason};
 use crate::metrics::InferenceLatencyStats;
+use crate::responses_websocket::ResponsesWebSocketState;
 use crate::retry::{
     self as retry_mod, RetryDecision, classify_error, clone_error, resolve_max_retries,
 };
@@ -89,6 +90,7 @@ pub(crate) async fn run_request_task(
     event_tx: mpsc::UnboundedSender<SamplingEvent>,
     cancel_token: CancellationToken,
     completion_tx: Option<oneshot::Sender<CompletionResult>>,
+    responses_websocket: Arc<ResponsesWebSocketState>,
 ) -> RequestId {
     let mut completion_tx = completion_tx;
     let idle_timeout = Duration::from_secs(
@@ -105,14 +107,15 @@ pub(crate) async fn run_request_task(
 
     // Build the initial client. Configuration errors here are fatal
     // (no point retrying with the same broken config).
-    let mut client = match SamplingClient::new(config.clone()) {
-        Ok(c) => c,
-        Err(err) => {
-            emit_failed(&event_tx, &request_id, &err);
-            send_completion(&mut completion_tx, Err(err));
-            return request_id;
-        }
-    };
+    let mut client =
+        match SamplingClient::new_with_websocket_state(config.clone(), responses_websocket) {
+            Ok(c) => c,
+            Err(err) => {
+                emit_failed(&event_tx, &request_id, &err);
+                send_completion(&mut completion_tx, Err(err));
+                return request_id;
+            }
+        };
 
     let sampling_span = crate::sampling_log::request_span(
         &request_id,
@@ -453,7 +456,10 @@ async fn apply_retry_decision(
             // HTTP/2 connection pools.
             let mut http1_config = config.clone();
             http1_config.force_http1 = true;
-            match SamplingClient::new(http1_config) {
+            match SamplingClient::new_with_websocket_state(
+                http1_config,
+                client.responses_websocket_state(),
+            ) {
                 Ok(fresh) => {
                     *client = fresh;
                     tracing::info!("rebuilt sampling client with HTTP/1.1 fallback for retry");
@@ -502,6 +508,17 @@ async fn apply_retry_decision(
                     exhausted_span.record("status_code", status as i64);
                 }
                 exhausted_span.in_scope(|| {});
+
+                if client.try_switch_fallback_transport().await {
+                    tracing::warn!(
+                        target: crate::sampling_log::TARGET,
+                        transport = "responses_websocket",
+                        fallback_transport = "responses_http",
+                        "WebSocket retry budget exhausted; replaying request over HTTP/SSE"
+                    );
+                    *retry_count = 0;
+                    return true;
+                }
             }
             emit_failed(event_tx, request_id, &fatal_err);
             send_completion(completion_tx, Err(fatal_err));

@@ -689,6 +689,11 @@ pub fn current_value_for(
         "default_model" => Some(SettingValue::String(
             pager.current_model_name.clone().unwrap_or_default(),
         )),
+        "show_openrouter_models" => Some(SettingValue::Bool(
+            ui.show_openrouter_models.unwrap_or(true),
+        )),
+        "show_chatgpt_models" => Some(SettingValue::Bool(ui.show_chatgpt_models.unwrap_or(true))),
+        "codex_fast_mode" => Some(SettingValue::Bool(ui.codex_fast_mode.unwrap_or(false))),
         // max_thoughts_width: `u16` widened to `i64`.
         "max_thoughts_width" => Some(SettingValue::Int(ui.max_thoughts_width as i64)),
         // coding_data_sharing: inverts the `_opt_out` bool.
@@ -945,6 +950,15 @@ mod tests {
                          the live default is resolved dynamically from \
                          cfg.models.default at session start",
                     );
+                }
+                ("show_openrouter_models", SettingKind::Bool { default }) => {
+                    assert_eq!(*default, ui.show_openrouter_models.unwrap_or(true));
+                }
+                ("show_chatgpt_models", SettingKind::Bool { default }) => {
+                    assert_eq!(*default, ui.show_chatgpt_models.unwrap_or(true));
+                }
+                ("codex_fast_mode", SettingKind::Bool { default }) => {
+                    assert_eq!(*default, ui.codex_fast_mode.unwrap_or(false));
                 }
                 // max_thoughts_width: `u16` widened to `i64`.
                 ("max_thoughts_width", SettingKind::Int { default, .. }) => {
