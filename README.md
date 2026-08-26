@@ -10,9 +10,9 @@
   Grog (<code>grog</code>)
 </h1>
 
-**Grog** is Raphael Lüthy's unofficial personalized fork of upstream
-[Grok Build](https://github.com/xai-org/grok-build) (`grok`), with custom
-personal-use changes. It is **not** an xAI release.
+**Grog** is a personal fork of upstream
+[Grok Build](https://github.com/xai-org/grok-build) (`grok`). It is **not** an
+xAI release.
 
 A thin `grog` wrapper over the upstream `xai-grok-pager` binary keeps crate
 names, `~/.grok`, `GROK_*` variables, URLs, and repository layout compatible
