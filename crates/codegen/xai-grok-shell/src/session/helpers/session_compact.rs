@@ -559,13 +559,14 @@ pub(crate) async fn generate_session_compact(
         }
         ApiBackend::Responses => {
             // ConversationItem directly — preserves encrypted reasoning.
+            // Do not force temperature: Codex Responses models such as
+            // gpt-5.6-sol reject the parameter when the provider leaves it unset.
             let request = ConversationRequest {
                 items: chat_history,
                 tool_choice: (!tools.is_empty()).then_some(conversation_tool_choice),
                 tools,
                 hosted_tools,
                 model: Some(sampling_config.model.to_owned()),
-                temperature: Some(1.0),
                 x_grok_conv_id: Some(session_id.to_string()),
                 x_grok_req_id: Some(format!("xai-compact-{}", uuid::Uuid::new_v4())),
                 x_grok_session_id: Some(session_id.to_string()),

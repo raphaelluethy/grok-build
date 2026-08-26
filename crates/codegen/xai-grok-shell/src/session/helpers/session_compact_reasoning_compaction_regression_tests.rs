@@ -463,7 +463,8 @@ async fn responses_below_trigger_preserves_images_and_tools() {
     });
 
     let base_url = format!("http://{addr}/v1");
-    let config = test_config_responses(&base_url);
+    let mut config = test_config_responses(&base_url);
+    config.temperature = None;
 
     let chat_history = image_compaction_history();
     let tools = vec![ToolSpec {
@@ -508,6 +509,12 @@ async fn responses_below_trigger_preserves_images_and_tools() {
 
     let bodies = captured.lock().unwrap();
     assert_eq!(bodies.len(), 2, "mock must have served both requests");
+    for body in bodies.iter() {
+        assert!(
+            body.get("temperature").is_none(),
+            "Responses compaction must omit temperature; got: {body:#}"
+        );
+    }
 
     let with_tools = &bodies[0];
     assert_eq!(
