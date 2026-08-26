@@ -141,24 +141,17 @@ pub fn merge_from_store(
     store: &credentials::ProviderStore,
     visibility: ProviderVisibility,
 ) {
-    // OpenRouter / ChatGPT catalog fetches use reqwest::blocking. Tokio only
-    // permits block_in_place on a multi-thread runtime; the ACP worker uses a
-    // current-thread runtime, so move the blocking work to a scoped OS thread
-    // there instead.
-    match tokio::runtime::Handle::try_current() {
-        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
-            tokio::task::block_in_place(|| merge_from_store_inner(catalog, store, visibility));
+    // Provider catalog fetches use reqwest::blocking. A scoped thread works
+    // both inside and outside Tokio, including the ACP LocalSet where
+    // `block_in_place` can panic despite a multi-thread runtime handle.
+    std::thread::scope(|scope| {
+        if let Err(payload) = scope
+            .spawn(move || merge_from_store_inner(catalog, store, visibility))
+            .join()
+        {
+            std::panic::resume_unwind(payload);
         }
-        Ok(_) => std::thread::scope(|scope| {
-            if let Err(payload) = scope
-                .spawn(move || merge_from_store_inner(catalog, store, visibility))
-                .join()
-            {
-                std::panic::resume_unwind(payload);
-            }
-        }),
-        Err(_) => merge_from_store_inner(catalog, store, visibility),
-    }
+    });
 }
 
 fn merge_from_store_inner(
