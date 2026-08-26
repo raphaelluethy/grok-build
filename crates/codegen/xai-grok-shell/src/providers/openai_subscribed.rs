@@ -37,6 +37,10 @@ const CODEX_CALLBACK_FALLBACK_PORT: u16 = 1457;
 const CODEX_CALLBACK_PATH: &str = "/auth/callback";
 const AUTH_CALLBACK_TIMEOUT: Duration = Duration::from_secs(600);
 const UNGATED_CLIENT_VERSION: &str = "0.0.0";
+/// Active prompt window advertised by Codex when the live catalog is unavailable.
+/// `max_context_window` is only a capability ceiling (often 872k or 1M) and
+/// must not be used for compaction or ACP context reporting.
+const DEFAULT_CODEX_CONTEXT_WINDOW: u64 = 272_000;
 
 struct FallbackModel {
     id: &'static str,
@@ -50,42 +54,42 @@ const FALLBACK_MODELS: &[FallbackModel] = &[
     FallbackModel {
         id: "gpt-5.6-sol",
         name: "GPT-5.6 Sol",
-        context_window: 372_000,
+        context_window: DEFAULT_CODEX_CONTEXT_WINDOW,
         default_effort: ReasoningEffort::Low,
         supports_fast_mode: true,
     },
     FallbackModel {
         id: "gpt-5.6-terra",
         name: "GPT-5.6 Terra",
-        context_window: 372_000,
+        context_window: DEFAULT_CODEX_CONTEXT_WINDOW,
         default_effort: ReasoningEffort::Medium,
         supports_fast_mode: true,
     },
     FallbackModel {
         id: "gpt-5.6-luna",
         name: "GPT-5.6 Luna",
-        context_window: 372_000,
+        context_window: DEFAULT_CODEX_CONTEXT_WINDOW,
         default_effort: ReasoningEffort::Medium,
         supports_fast_mode: true,
     },
     FallbackModel {
         id: "gpt-5.5",
         name: "GPT-5.5",
-        context_window: 272_000,
+        context_window: DEFAULT_CODEX_CONTEXT_WINDOW,
         default_effort: ReasoningEffort::Medium,
         supports_fast_mode: true,
     },
     FallbackModel {
         id: "gpt-5.4",
         name: "GPT-5.4",
-        context_window: 272_000,
+        context_window: DEFAULT_CODEX_CONTEXT_WINDOW,
         default_effort: ReasoningEffort::Medium,
         supports_fast_mode: true,
     },
     FallbackModel {
         id: "gpt-5.4-mini",
         name: "GPT-5.4 Mini",
-        context_window: 272_000,
+        context_window: DEFAULT_CODEX_CONTEXT_WINDOW,
         default_effort: ReasoningEffort::Medium,
         supports_fast_mode: false,
     },
@@ -143,11 +147,7 @@ pub fn catalog_entries(store: &ProviderStore) -> IndexMap<String, ModelEntry> {
                 &mut out,
                 &model.slug,
                 &model.display_name,
-                model
-                    .context_window
-                    .or(model.max_context_window)
-                    .unwrap_or(272_000)
-                    .max(1),
+                model.effective_context_window(),
                 !reasoning_efforts.is_empty(),
                 default_effort,
                 reasoning_efforts,
@@ -282,7 +282,6 @@ struct CatalogModel {
     #[serde(default)]
     supported_reasoning_levels: Vec<ReasoningEffortPreset>,
     context_window: Option<u64>,
-    max_context_window: Option<u64>,
     #[serde(default)]
     visibility: ModelVisibility,
     #[serde(default)]
@@ -294,6 +293,12 @@ struct CatalogModel {
 }
 
 impl CatalogModel {
+    fn effective_context_window(&self) -> u64 {
+        self.context_window
+            .unwrap_or(DEFAULT_CODEX_CONTEXT_WINDOW)
+            .max(1)
+    }
+
     fn supports_fast_mode(&self) -> bool {
         self.additional_speed_tiers
             .iter()
@@ -728,6 +733,58 @@ mod tests {
         assert!(model.info.supports_reasoning_effort);
         assert!(model.info.supports_fast_mode);
         assert!(!catalog["chatgpt/gpt-5.4-mini"].info.supports_fast_mode);
+    }
+
+    #[test]
+    fn fallback_catalog_uses_active_context_window() {
+        let mut store = ProviderStore::default();
+        store.openai_subscribed = Some(ChatGptCreds {
+            access_token: "tok".into(),
+            refresh_token: "ref".into(),
+            expires_at_ms: now_ms() + 60_000,
+            account_id: None,
+            email: None,
+        });
+
+        let catalog = catalog_entries(&store);
+        let acp_catalog = crate::agent::config::to_acp_model_info(&catalog);
+
+        for model in FALLBACK_MODELS {
+            let catalog_id = format!("chatgpt/{}", model.id);
+            assert_eq!(
+                catalog[&catalog_id].info.context_window.get(),
+                DEFAULT_CODEX_CONTEXT_WINDOW,
+                "{} must use the active Codex prompt window",
+                model.id,
+            );
+
+            let acp_id = agent_client_protocol::ModelId::new(catalog_id);
+            let meta = acp_catalog[&acp_id]
+                .meta
+                .as_ref()
+                .expect("provider context metadata must be present");
+            assert_eq!(
+                meta["totalContextTokens"], DEFAULT_CODEX_CONTEXT_WINDOW,
+                "{} must expose the active window to ACP clients",
+                model.id,
+            );
+        }
+    }
+
+    #[test]
+    fn max_context_window_is_not_the_active_window() {
+        let model: CatalogModel = serde_json::from_value(serde_json::json!({
+            "slug": "gpt-5.6-sol",
+            "display_name": "GPT-5.6 Sol",
+            "context_window": null,
+            "max_context_window": 872000
+        }))
+        .unwrap();
+
+        assert_eq!(
+            model.effective_context_window(),
+            DEFAULT_CODEX_CONTEXT_WINDOW
+        );
     }
 
     #[test]
