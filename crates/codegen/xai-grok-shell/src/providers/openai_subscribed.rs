@@ -41,12 +41,12 @@ const UNGATED_CLIENT_VERSION: &str = "0.0.0";
 /// `max_context_window` is only a capability ceiling (often 872k or 1M) and
 /// must not be used for compaction or ACP context reporting.
 const DEFAULT_CODEX_CONTEXT_WINDOW: u64 = 272_000;
+const DEFAULT_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::High;
 
 struct FallbackModel {
     id: &'static str,
     name: &'static str,
     context_window: u64,
-    default_effort: ReasoningEffort,
     supports_fast_mode: bool,
 }
 
@@ -55,42 +55,36 @@ const FALLBACK_MODELS: &[FallbackModel] = &[
         id: "gpt-5.6-sol",
         name: "GPT-5.6 Sol",
         context_window: DEFAULT_CODEX_CONTEXT_WINDOW,
-        default_effort: ReasoningEffort::Low,
         supports_fast_mode: true,
     },
     FallbackModel {
         id: "gpt-5.6-terra",
         name: "GPT-5.6 Terra",
         context_window: DEFAULT_CODEX_CONTEXT_WINDOW,
-        default_effort: ReasoningEffort::Medium,
         supports_fast_mode: true,
     },
     FallbackModel {
         id: "gpt-5.6-luna",
         name: "GPT-5.6 Luna",
         context_window: DEFAULT_CODEX_CONTEXT_WINDOW,
-        default_effort: ReasoningEffort::Medium,
         supports_fast_mode: true,
     },
     FallbackModel {
         id: "gpt-5.5",
         name: "GPT-5.5",
         context_window: DEFAULT_CODEX_CONTEXT_WINDOW,
-        default_effort: ReasoningEffort::Medium,
         supports_fast_mode: true,
     },
     FallbackModel {
         id: "gpt-5.4",
         name: "GPT-5.4",
         context_window: DEFAULT_CODEX_CONTEXT_WINDOW,
-        default_effort: ReasoningEffort::Medium,
         supports_fast_mode: true,
     },
     FallbackModel {
         id: "gpt-5.4-mini",
         name: "GPT-5.4 Mini",
         context_window: DEFAULT_CODEX_CONTEXT_WINDOW,
-        default_effort: ReasoningEffort::Medium,
         supports_fast_mode: false,
     },
 ];
@@ -131,8 +125,7 @@ pub fn catalog_entries(store: &ProviderStore) -> IndexMap<String, ModelEntry> {
                 model.name,
                 model.context_window,
                 true,
-                Some(model.default_effort),
-                fallback_effort_options(model.default_effort),
+                fallback_effort_options(),
                 model.supports_fast_mode,
                 extra_headers.clone(),
                 creds.access_token.clone(),
@@ -140,8 +133,7 @@ pub fn catalog_entries(store: &ProviderStore) -> IndexMap<String, ModelEntry> {
         }
     } else {
         for model in discovered {
-            let default_effort = parse_effort(model.default_reasoning_level.as_deref());
-            let reasoning_efforts = catalog_effort_options(&model, default_effort);
+            let reasoning_efforts = catalog_effort_options(&model);
             let supports_fast_mode = model.supports_fast_mode();
             insert_model(
                 &mut out,
@@ -149,7 +141,6 @@ pub fn catalog_entries(store: &ProviderStore) -> IndexMap<String, ModelEntry> {
                 &model.display_name,
                 model.effective_context_window(),
                 !reasoning_efforts.is_empty(),
-                default_effort,
                 reasoning_efforts,
                 supports_fast_mode,
                 extra_headers.clone(),
@@ -166,7 +157,6 @@ fn insert_model(
     name: &str,
     context_window: u64,
     supports_reasoning: bool,
-    default_effort: Option<ReasoningEffort>,
     reasoning_efforts: Vec<ReasoningEffortOption>,
     supports_fast_mode: bool,
     extra_headers: IndexMap<String, String>,
@@ -187,41 +177,38 @@ fn insert_model(
         supports_reasoning,
         max_completion_tokens: None,
     });
-    entry.info.reasoning_effort = default_effort;
+    entry.info.reasoning_effort = Some(DEFAULT_REASONING_EFFORT);
     entry.info.reasoning_efforts = reasoning_efforts;
     entry.info.supports_fast_mode = supports_fast_mode;
     out.insert(id, entry);
 }
 
-fn fallback_effort_options(default_effort: ReasoningEffort) -> Vec<ReasoningEffortOption> {
+fn fallback_effort_options() -> Vec<ReasoningEffortOption> {
     vec![
         effort_opt(
             "low",
             ReasoningEffort::Low,
-            default_effort == ReasoningEffort::Low,
+            DEFAULT_REASONING_EFFORT == ReasoningEffort::Low,
         ),
         effort_opt(
             "medium",
             ReasoningEffort::Medium,
-            default_effort == ReasoningEffort::Medium,
+            DEFAULT_REASONING_EFFORT == ReasoningEffort::Medium,
         ),
         effort_opt(
             "high",
             ReasoningEffort::High,
-            default_effort == ReasoningEffort::High,
+            DEFAULT_REASONING_EFFORT == ReasoningEffort::High,
         ),
         effort_opt(
             "xhigh",
             ReasoningEffort::Xhigh,
-            default_effort == ReasoningEffort::Xhigh,
+            DEFAULT_REASONING_EFFORT == ReasoningEffort::Xhigh,
         ),
     ]
 }
 
-fn catalog_effort_options(
-    model: &CatalogModel,
-    default_effort: Option<ReasoningEffort>,
-) -> Vec<ReasoningEffortOption> {
+fn catalog_effort_options(model: &CatalogModel) -> Vec<ReasoningEffortOption> {
     let mut options = Vec::new();
     for preset in &model.supported_reasoning_levels {
         let Some(value) = parse_effort(Some(&preset.effort)) else {
@@ -236,13 +223,18 @@ fn catalog_effort_options(
         options.push(effort_opt(
             preset.effort.trim(),
             value,
-            Some(value) == default_effort,
+            value == DEFAULT_REASONING_EFFORT,
         ));
     }
-    if options.is_empty()
-        && let Some(default_effort) = default_effort
+    if !options
+        .iter()
+        .any(|option| option.value == DEFAULT_REASONING_EFFORT)
     {
-        options.push(effort_opt(default_effort.as_str(), default_effort, true));
+        options.push(effort_opt(
+            DEFAULT_REASONING_EFFORT.as_str(),
+            DEFAULT_REASONING_EFFORT,
+            true,
+        ));
     }
     options
 }
@@ -278,7 +270,6 @@ struct ModelsResponse {
 struct CatalogModel {
     slug: String,
     display_name: String,
-    default_reasoning_level: Option<String>,
     #[serde(default)]
     supported_reasoning_levels: Vec<ReasoningEffortPreset>,
     context_window: Option<u64>,
@@ -733,6 +724,67 @@ mod tests {
         assert!(model.info.supports_reasoning_effort);
         assert!(model.info.supports_fast_mode);
         assert!(!catalog["chatgpt/gpt-5.4-mini"].info.supports_fast_mode);
+        for (model_id, model) in &catalog {
+            assert_eq!(
+                model.info.reasoning_effort,
+                Some(ReasoningEffort::High),
+                "{model_id} must default to high reasoning effort",
+            );
+            let defaults: Vec<_> = model
+                .info
+                .reasoning_efforts
+                .iter()
+                .filter(|option| option.default)
+                .map(|option| option.value)
+                .collect();
+            assert_eq!(
+                defaults,
+                vec![ReasoningEffort::High],
+                "{model_id} must expose high as its only menu default",
+            );
+        }
+    }
+
+    #[test]
+    fn live_catalog_efforts_override_upstream_default_with_high() {
+        let model: CatalogModel = serde_json::from_value(serde_json::json!({
+            "slug": "gpt-live",
+            "display_name": "GPT Live",
+            "default_reasoning_level": "low",
+            "supported_reasoning_levels": [
+                { "effort": "low" },
+                { "effort": "medium" },
+                { "effort": "high" }
+            ]
+        }))
+        .unwrap();
+
+        let options = catalog_effort_options(&model);
+        assert_eq!(
+            options
+                .iter()
+                .find(|option| option.default)
+                .map(|option| option.value),
+            Some(ReasoningEffort::High),
+        );
+        assert_eq!(options.iter().filter(|option| option.default).count(), 1,);
+    }
+
+    #[test]
+    fn live_catalog_efforts_add_high_when_upstream_omits_it() {
+        let model: CatalogModel = serde_json::from_value(serde_json::json!({
+            "slug": "gpt-live",
+            "display_name": "GPT Live",
+            "supported_reasoning_levels": [{ "effort": "low" }]
+        }))
+        .unwrap();
+
+        let options = catalog_effort_options(&model);
+        assert!(
+            options
+                .iter()
+                .any(|option| { option.value == ReasoningEffort::High && option.default })
+        );
     }
 
     #[test]
