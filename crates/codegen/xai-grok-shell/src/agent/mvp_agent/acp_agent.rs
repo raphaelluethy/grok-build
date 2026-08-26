@@ -2177,6 +2177,52 @@ impl acp::Agent for MvpAgent {
         }
         res
     }
+    async fn set_session_config_option(
+        &self,
+        args: acp::SetSessionConfigOptionRequest,
+    ) -> Result<acp::SetSessionConfigOptionResponse, acp::Error> {
+        tracing::info!("Received set session config option request {args:?}");
+        let session_id = args.session_id.clone();
+        let handle = self
+            .session_handle_waiting_for_load(&session_id)
+            .await
+            .ok_or_else(|| acp::Error::invalid_params().data("unknown session id"))?;
+        let model_state = self.model_state(Some(&session_id));
+        let offered = self.acp_session_config_options(Some(&session_id), &model_state);
+        let effort_options = self.session_config_effort_options(&model_state);
+        let parsed = session_config::parse_set_session_config_option(
+            &args,
+            &offered,
+            &effort_options,
+        )?;
+        match parsed {
+            session_config::ParsedSessionConfigSet::Model(model_id) => {
+                self.set_session_model(
+                    acp::SetSessionModelRequest::new(session_id.clone(), model_id),
+                )
+                .await?;
+            }
+            session_config::ParsedSessionConfigSet::ThoughtLevel(effort) => {
+                let mut meta = acp::Meta::new();
+                meta.insert(
+                    REASONING_EFFORT_META_KEY.to_string(),
+                    reasoning_effort_meta_value(effort),
+                );
+                self.set_session_model(
+                    acp::SetSessionModelRequest::new(session_id.clone(), handle.model_id.clone())
+                        .meta(meta),
+                )
+                .await?;
+            }
+            session_config::ParsedSessionConfigSet::FastMode(enabled) => {
+                self.set_session_fast_mode(&session_id, enabled)?;
+            }
+        }
+        let model_state = self.model_state(Some(&session_id));
+        Ok(acp::SetSessionConfigOptionResponse::new(
+            self.acp_session_config_options(Some(&session_id), &model_state),
+        ))
+    }
     #[tracing::instrument(
         name = "agent.ext_method",
         skip_all,

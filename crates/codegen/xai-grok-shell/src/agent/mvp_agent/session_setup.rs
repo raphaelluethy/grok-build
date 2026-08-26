@@ -721,8 +721,10 @@ impl MvpAgent {
             session_started_at.elapsed(),
             false,
         );
+        let config_options = self.acp_session_config_options(Some(&session_id), &models);
         Ok(acp::NewSessionResponse::new(session_id)
             .models(Some(models))
+            .config_options(config_options)
             .meta(meta.as_object().cloned()))
     }
     pub(super) async fn load_session_inner(
@@ -1051,6 +1053,7 @@ impl MvpAgent {
             client_code_nav_enabled,
             session_yolo_mode,
             session_auto_mode,
+            request_meta.as_ref(),
         );
         self.maybe_spawn_interactive_trust_prompt(
             &session_id,
@@ -1065,8 +1068,10 @@ impl MvpAgent {
             .build_attach_response_meta(&session_id, &summary, persist_data, code_restore_info)
             .await;
         xai_grok_telemetry::unified_log::info("session loaded", Some(session_id.0.as_ref()), None);
+        let config_options = self.acp_session_config_options(Some(&session_id), &model_state);
         let response = acp::LoadSessionResponse::new()
             .models(Some(model_state))
+            .config_options(config_options)
             .meta(response_meta.as_object().cloned());
         if let Some(handle) = self.resident_handle(&session_id) {
             let _ = handle.cmd_tx.send(SessionCommand::AdvertiseCommands);
@@ -1256,10 +1261,14 @@ impl MvpAgent {
         client_code_nav_enabled: bool,
         session_yolo_mode: bool,
         session_auto_mode: bool,
+        session_meta: Option<&acp::Meta>,
     ) {
         let session_id = session_id.clone();
+        let boolean_config_options =
+            self.session_emits_standard_boolean_config_options(None, session_meta);
         self.with_resident_mut(&session_id, |handle| {
             handle.code_nav_enabled = client_code_nav_enabled;
+            handle.boolean_config_options = boolean_config_options;
             if session_yolo_mode && !handle.yolo_mode {
                 tracing::debug!(
                     session_id = %session_id.0,

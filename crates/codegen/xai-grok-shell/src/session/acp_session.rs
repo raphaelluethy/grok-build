@@ -824,6 +824,13 @@ pub(crate) struct SessionActor {
     /// row. Assigned from the attaching client's capability; see
     /// [`crate::session::handle::SessionHandle::set_status_line_wanted`].
     pub(crate) status_line_enabled: Arc<std::sync::atomic::AtomicBool>,
+    /// Session-scoped Fast Mode value, shared with [`crate::session::handle::SessionHandle`].
+    /// The turn path uses it after an explicit ACP override; otherwise it reads
+    /// the live process configuration.
+    pub(crate) fast_mode_enabled: Arc<std::sync::atomic::AtomicBool>,
+    /// Whether ACP explicitly overrode Fast Mode for this session. Until then,
+    /// the turn path follows live process config changes.
+    pub(crate) fast_mode_overridden: Arc<std::sync::atomic::AtomicBool>,
     /// Shared models manager for etag-triggered refresh from response headers.
     pub(crate) models_manager: crate::agent::models::ModelsManager,
     /// Stable display path for forked sessions (original project path).

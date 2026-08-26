@@ -4717,6 +4717,168 @@ fn inject_capabilities_terminal_into_session_load() {
     );
 }
 
+fn boolean_config_meta_key() -> &'static str {
+    crate::agent::session_config::BOOLEAN_CONFIG_OPTIONS_META_KEY
+}
+
+#[test]
+fn extract_boolean_config_options_object_advertises_support() {
+    let json = pv(
+        r#"{"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":1,"clientCapabilities":{"session":{"configOptions":{"boolean":{}}}}}}"#,
+    );
+    assert_eq!(extract_boolean_config_options_capability(&json), Some(true));
+}
+
+#[test]
+fn extract_boolean_config_options_absent_is_false() {
+    let json = pv(
+        r#"{"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":1,"clientCapabilities":{}}}"#,
+    );
+    assert_eq!(
+        extract_boolean_config_options_capability(&json),
+        Some(false)
+    );
+}
+
+#[test]
+fn extract_boolean_config_options_null_is_false() {
+    let json = pv(
+        r#"{"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":1,"clientCapabilities":{"session":{"configOptions":{"boolean":null}}}}}"#,
+    );
+    assert_eq!(
+        extract_boolean_config_options_capability(&json),
+        Some(false)
+    );
+}
+
+#[test]
+fn extract_boolean_config_options_ignores_non_initialize() {
+    let json = pv(r#"{"jsonrpc":"2.0","method":"session/new","id":1,"params":{}}"#);
+    assert_eq!(extract_boolean_config_options_capability(&json), None);
+}
+
+#[test]
+fn inject_boolean_config_options_true_on_session_new() {
+    let caps = ClientCapabilities {
+        boolean_config_options: true,
+        ..Default::default()
+    };
+    let payload =
+        r#"{"jsonrpc":"2.0","method":"session/new","id":1,"params":{"cwd":"/repo","_meta":{}}}"#;
+    let mut json = pv(payload);
+    assert!(inject_session_request_context(
+        &mut json,
+        &caps,
+        "zed",
+        ClientId(1)
+    ));
+    assert_eq!(
+        json["params"]["_meta"][boolean_config_meta_key()],
+        serde_json::json!(true)
+    );
+}
+
+#[test]
+fn inject_boolean_config_options_false_on_session_new() {
+    let caps = ClientCapabilities {
+        boolean_config_options: false,
+        ..Default::default()
+    };
+    let payload =
+        r#"{"jsonrpc":"2.0","method":"session/new","id":1,"params":{"cwd":"/repo","_meta":{}}}"#;
+    let mut json = pv(payload);
+    assert!(inject_session_request_context(
+        &mut json,
+        &caps,
+        "grok-tui",
+        ClientId(2)
+    ));
+    assert_eq!(
+        json["params"]["_meta"][boolean_config_meta_key()],
+        serde_json::json!(false)
+    );
+}
+
+#[test]
+fn inject_boolean_config_options_into_session_load_and_resume() {
+    let caps = ClientCapabilities {
+        boolean_config_options: true,
+        ..Default::default()
+    };
+    let load = format!(
+        r#"{{"jsonrpc":"2.0","method":"{}","id":2,"params":{{"sessionId":"abc","_meta":{{}}}}}}"#,
+        AGENT_METHOD_NAMES.session_load
+    );
+    let mut load_json = pv(&load);
+    inject_session_request_context(&mut load_json, &caps, "zed", ClientId(1));
+    assert_eq!(
+        load_json["params"]["_meta"][boolean_config_meta_key()],
+        serde_json::json!(true)
+    );
+
+    let resume = format!(
+        r#"{{"jsonrpc":"2.0","method":"{}","id":3,"params":{{"sessionId":"abc","_meta":{{}}}}}}"#,
+        AGENT_METHOD_NAMES.session_resume
+    );
+    let mut resume_json = pv(&resume);
+    inject_session_request_context(&mut resume_json, &caps, "zed", ClientId(1));
+    assert_eq!(
+        resume_json["params"]["_meta"][boolean_config_meta_key()],
+        serde_json::json!(true)
+    );
+}
+
+#[test]
+fn inject_boolean_config_options_two_clients_stay_isolated() {
+    let zed_caps = ClientCapabilities {
+        boolean_config_options: true,
+        ..Default::default()
+    };
+    let tui_caps = ClientCapabilities {
+        boolean_config_options: false,
+        ..Default::default()
+    };
+    let session_new =
+        r#"{"jsonrpc":"2.0","method":"session/new","id":1,"params":{"cwd":"/repo","_meta":{}}}"#;
+
+    let mut zed_json = pv(session_new);
+    inject_session_request_context(&mut zed_json, &zed_caps, "zed", ClientId(1));
+    let mut tui_json = pv(session_new);
+    inject_session_request_context(&mut tui_json, &tui_caps, "grok-tui", ClientId(2));
+
+    assert_eq!(
+        zed_json["params"]["_meta"][boolean_config_meta_key()],
+        serde_json::json!(true)
+    );
+    assert_eq!(
+        tui_json["params"]["_meta"][boolean_config_meta_key()],
+        serde_json::json!(false)
+    );
+}
+
+#[test]
+fn inject_boolean_config_options_when_it_is_the_only_capability() {
+    let payload = format!(
+        r#"{{"jsonrpc":"2.0","method":"{}","id":1,"params":{{"cwd":"/tmp"}}}}"#,
+        AGENT_METHOD_NAMES.session_new
+    );
+    let caps = ClientCapabilities {
+        boolean_config_options: true,
+        ..Default::default()
+    };
+    let mut json = pv(&payload);
+    assert!(inject_session_request_context(
+        &mut json,
+        &caps,
+        "",
+        ClientId(1)
+    ));
+    assert_eq!(
+        json["params"]["_meta"][boolean_config_meta_key()],
+        serde_json::json!(true)
+    );
+}
+
 #[tokio::test]
 async fn subagent_child_session_routed_after_spawned() {
     let temp = TempDir::new().unwrap();

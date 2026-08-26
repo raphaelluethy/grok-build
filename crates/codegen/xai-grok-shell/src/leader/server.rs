@@ -692,6 +692,7 @@ fn inject_session_request_context(
         && !capabilities.fs_read
         && !capabilities.fs_write
         && !capabilities.status_line
+        && !capabilities.boolean_config_options
     {
         return false;
     }
@@ -764,6 +765,10 @@ fn inject_session_request_context(
                 xai_grok_status_line::CLIENT_STATUS_LINE_META.to_string(),
                 serde_json::json!(capabilities.status_line),
             );
+            meta_obj.insert(
+                crate::agent::session_config::BOOLEAN_CONFIG_OPTIONS_META_KEY.to_string(),
+                serde_json::json!(capabilities.boolean_config_options),
+            );
         }
     }
     mutated
@@ -781,6 +786,20 @@ fn inject_session_request_context(
 /// Mutates `json` in place. Returns `(mutated, was_initialize)`. The second
 /// boolean is `true` only when the message was an `initialize` request,
 /// allowing the caller to record that `initialize` has been seen.
+/// Parse `params.clientCapabilities.session.configOptions.boolean` from a raw
+/// `initialize` request. Presence of an object advertises support. Returns
+/// `None` when the message is not initialize.
+fn extract_boolean_config_options_capability(json: &serde_json::Value) -> Option<bool> {
+    let is_initialize = json
+        .get("method")
+        .and_then(|m| m.as_str())
+        .is_some_and(|m| m == AGENT_METHOD_NAMES.initialize);
+    if !is_initialize {
+        return None;
+    }
+    let boolean = json.pointer("/params/clientCapabilities/session/configOptions/boolean");
+    Some(boolean.is_some_and(|value| value.is_object()))
+}
 fn inject_client_identity_into_initialize(
     json: &mut serde_json::Value,
     client_type: &str,
@@ -1891,6 +1910,14 @@ pub async fn run_leader_server(
                         if let Some(new_model) = extract_model_id_from_set_model(json) {
                             debug!(client_id = id.0, model = %new_model, "Updated client default_model from session/setModel");
                             client.capabilities.default_model = Some(new_model);
+                        }
+                        if let Some(supported) = extract_boolean_config_options_capability(json) {
+                            client.capabilities.boolean_config_options = supported;
+                            debug!(
+                                client_id = id.0,
+                                supported,
+                                "Recorded boolean config-options capability from initialize"
+                            );
                         }
                     }
                     if let (Some(json), Some(client)) = (json.as_mut(), clients.get_mut(&id)) {

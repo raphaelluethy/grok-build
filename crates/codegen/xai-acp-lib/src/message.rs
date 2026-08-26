@@ -394,6 +394,11 @@ mod agent {
         acp::SetSessionModelResponse,
         acp::AGENT_METHOD_NAMES.session_set_model,
     );
+    acp_define_request_response!(
+        acp::SetSessionConfigOptionRequest,
+        acp::SetSessionConfigOptionResponse,
+        acp::AGENT_METHOD_NAMES.session_set_config_option,
+    );
 
     /// ACP messages meant *for* the agent.
     #[derive(Debug, From)]
@@ -408,6 +413,7 @@ mod agent {
         ExtMethod(AcpArgsGeneric<acp::ExtRequest, S>),
         ExtNotification(AcpArgsGeneric<acp::ExtNotification, S>),
         SetSessionModel(AcpArgsGeneric<acp::SetSessionModelRequest, S>),
+        SetSessionConfigOption(AcpArgsGeneric<acp::SetSessionConfigOptionRequest, S>),
     }
 
     #[allow(type_alias_bounds)]
@@ -428,6 +434,7 @@ mod agent {
                 Self::ExtMethod(a) => a.method_name(),
                 Self::ExtNotification(a) => a.method_name(),
                 Self::SetSessionModel(a) => a.method_name(),
+                Self::SetSessionConfigOption(a) => a.method_name(),
             }
         }
     }
@@ -462,6 +469,9 @@ mod agent {
                     state.serialize_field("request", args.request.borrow())?
                 }
                 Self::SetSessionModel(args) => {
+                    state.serialize_field("request", args.request.borrow())?
+                }
+                Self::SetSessionConfigOption(args) => {
                     state.serialize_field("request", args.request.borrow())?
                 }
             }
@@ -510,6 +520,8 @@ mod agent {
                 parse!(Cancel)
             } else if method == acp::AGENT_METHOD_NAMES.session_set_model {
                 parse!(SetSessionModel)
+            } else if method == acp::AGENT_METHOD_NAMES.session_set_config_option {
+                parse!(SetSessionConfigOption)
             } else if method == "ext_method" {
                 parse!(ExtMethod)
             } else if method == "ext_notification" {
@@ -535,6 +547,9 @@ mod agent {
                 Self::ExtMethod(args) => AcpAgentMessageBox::ExtMethod(args.boxed()),
                 Self::ExtNotification(args) => AcpAgentMessageBox::ExtNotification(args.boxed()),
                 Self::SetSessionModel(args) => AcpAgentMessageBox::SetSessionModel(args.boxed()),
+                Self::SetSessionConfigOption(args) => {
+                    AcpAgentMessageBox::SetSessionConfigOption(args.boxed())
+                }
             }
         }
 
@@ -628,7 +643,120 @@ mod agent {
                     }
                     .boxed_local(),
                 ),
+                AcpAgentMessage::SetSessionConfigOption(args) => spawn(
+                    async move {
+                        _ = args
+                            .response_tx
+                            .send(agent.set_session_config_option(args.request).await)
+                            .ok();
+                    }
+                    .boxed_local(),
+                ),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod set_session_config_option_routing_tests {
+    use super::*;
+    use agent_client_protocol as acp;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    fn config_args() -> AcpArgs<acp::SetSessionConfigOptionRequest> {
+        let (response_tx, _) = oneshot::channel();
+        AcpArgs {
+            request: acp::SetSessionConfigOptionRequest::new("sess", "model", "grok-build"),
+            response_tx,
+        }
+    }
+
+    #[test]
+    fn set_session_config_option_method_name_and_roundtrip() {
+        let msg = AcpAgentMessage::SetSessionConfigOption(config_args());
+        assert_eq!(
+            msg.method_name(),
+            acp::AGENT_METHOD_NAMES.session_set_config_option
+        );
+        let json = serde_json::to_value(&msg).expect("serialize");
+        assert_eq!(
+            json["method_name"],
+            acp::AGENT_METHOD_NAMES.session_set_config_option
+        );
+        assert_eq!(json["request"]["sessionId"], "sess");
+        assert_eq!(json["request"]["configId"], "model");
+        assert_eq!(json["request"]["value"], "grok-build");
+        let decoded: AcpAgentMessage = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(
+            decoded.method_name(),
+            acp::AGENT_METHOD_NAMES.session_set_config_option
+        );
+    }
+
+    struct RecordingAgent {
+        called: Rc<Cell<bool>>,
+    }
+
+    #[async_trait::async_trait(?Send)]
+    impl acp::Agent for RecordingAgent {
+        async fn initialize(
+            &self,
+            _: acp::InitializeRequest,
+        ) -> acp::Result<acp::InitializeResponse> {
+            unimplemented!()
+        }
+        async fn authenticate(
+            &self,
+            _: acp::AuthenticateRequest,
+        ) -> acp::Result<acp::AuthenticateResponse> {
+            unimplemented!()
+        }
+        async fn new_session(
+            &self,
+            _: acp::NewSessionRequest,
+        ) -> acp::Result<acp::NewSessionResponse> {
+            unimplemented!()
+        }
+        async fn prompt(&self, _: acp::PromptRequest) -> acp::Result<acp::PromptResponse> {
+            unimplemented!()
+        }
+        async fn cancel(&self, _: acp::CancelNotification) -> acp::Result<()> {
+            unimplemented!()
+        }
+        async fn set_session_config_option(
+            &self,
+            args: acp::SetSessionConfigOptionRequest,
+        ) -> acp::Result<acp::SetSessionConfigOptionResponse> {
+            self.called.set(true);
+            assert_eq!(args.config_id.0.as_ref(), "model");
+            Ok(acp::SetSessionConfigOptionResponse::new(vec![]))
+        }
+    }
+
+    #[tokio::test]
+    async fn route_to_agent_dispatches_set_session_config_option() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let called = Rc::new(Cell::new(false));
+                let (response_tx, response_rx) = oneshot::channel();
+                let msg = AcpAgentMessage::SetSessionConfigOption(AcpArgs {
+                    request: acp::SetSessionConfigOptionRequest::new("sess", "model", "grok-build"),
+                    response_tx,
+                });
+                msg.route_to_agent(
+                    RecordingAgent {
+                        called: called.clone(),
+                    },
+                    |fut| {
+                        tokio::task::spawn_local(fut);
+                    },
+                );
+                let response = response_rx.await.expect("response");
+                assert!(called.get());
+                assert_eq!(response.unwrap().config_options.len(), 0);
+            })
+            .await;
     }
 }

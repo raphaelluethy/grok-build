@@ -92,6 +92,50 @@ async fn assert_reserved_session_kind_is_rejected(
     assert_eq!(error.code, acp::ErrorCode::InvalidParams);
 }
 
+fn assert_has_standard_model_option(options: Option<&[acp::SessionConfigOption]>, method: &str) {
+    let model = options
+        .and_then(|options| {
+            options
+                .iter()
+                .find(|option| option.id.0.as_ref() == "model")
+        })
+        .unwrap_or_else(|| panic!("{method} must return the standard ACP model option"));
+    assert_eq!(
+        model.category,
+        Some(acp::SessionConfigOptionCategory::Model)
+    );
+    assert!(matches!(&model.kind, acp::SessionConfigKind::Select(_)));
+}
+
+async fn assert_standard_model_option_is_settable(
+    conn: &acp::ClientSideConnection,
+    session_id: &acp::SessionId,
+) {
+    let response = tokio::time::timeout(
+        RPC_TIMEOUT,
+        conn.set_session_config_option(acp::SetSessionConfigOptionRequest::new(
+            session_id.clone(),
+            "model",
+            "test-model",
+        )),
+    )
+    .await
+    .expect("session/set_config_option timed out")
+    .expect("setting the ACP model option failed");
+    let model = response
+        .config_options
+        .iter()
+        .find(|option| option.id.0.as_ref() == "model")
+        .expect("set response must return the complete model option");
+    let acp::SessionConfigKind::Select(select) = &model.kind else {
+        panic!(
+            "model config option must remain a select, got {:?}",
+            model.kind
+        );
+    };
+    assert_eq!(select.current_value.0.as_ref(), "test-model");
+}
+
 async fn resident_sessions(conn: &acp::ClientSideConnection) -> u64 {
     let resp = ext_method(conn, "x.ai/debug/agent", json!({})).await;
     resp["result"]["registries"]["sessions"]
@@ -179,6 +223,7 @@ async fn assert_resume_does_not_replay(
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
+    assert_has_standard_model_option(resumed.config_options.as_deref(), "session/resume");
     let meta = resumed.meta.expect("resume must return session meta");
     assert!(
         meta.contains_key("x.ai/sessionConfig"),
@@ -197,7 +242,7 @@ async fn assert_load_replays(
 ) {
     let _ = log.take_for(session_id);
 
-    tokio::time::timeout(
+    let loaded = tokio::time::timeout(
         RPC_TIMEOUT,
         conn.load_session(acp::LoadSessionRequest::new(
             session_id.clone(),
@@ -207,6 +252,7 @@ async fn assert_load_replays(
     .await
     .expect("session/load timed out")
     .expect("session/load failed");
+    assert_has_standard_model_option(loaded.config_options.as_deref(), "session/load");
 
     // Chunks specifically: a stray `Plan` would satisfy "any content" without a
     // transcript, and this control is what makes the resume assertion falsifiable.
@@ -452,6 +498,7 @@ fn acp_session_setup_conformance() {
         assert_reserved_session_kind_is_rejected(&conn, &cwd).await;
 
         let session_id = new_session(&conn, &cwd).await;
+        assert_standard_model_option_is_settable(&conn, &session_id).await;
         prompt_turn(&conn, &session_id, "remember this turn").await;
 
         assert_resume_does_not_replay(&conn, &log, &session_id, &cwd).await;

@@ -1573,6 +1573,10 @@ pub(crate) async fn spawn_session_actor(
             0,
         );
     }
+    let fast_mode_enabled = Arc::new(std::sync::atomic::AtomicBool::new(
+        models_manager.ui_codex_fast_mode(),
+    ));
+    let fast_mode_overridden = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let session = Arc::new_cyclic(|weak: &std::sync::Weak<SessionActor>| SessionActor {
         status_wake: Default::default(),
         session_info: session_info.clone(),
@@ -1691,6 +1695,8 @@ pub(crate) async fn spawn_session_actor(
         last_reported_branch: Arc::new(Mutex::new(None)),
         git_head_enabled: fs_watch_caps.git_head,
         status_line_enabled: status_line_enabled.clone(),
+        fast_mode_enabled: fast_mode_enabled.clone(),
+        fast_mode_overridden: fast_mode_overridden.clone(),
         models_manager,
         display_cwd: {
             let lock = std::sync::OnceLock::new();
@@ -2139,6 +2145,9 @@ pub(crate) async fn spawn_session_actor(
             signals_handle,
             gateway_enabled,
             status_line_enabled,
+            fast_mode_enabled,
+            fast_mode_overridden,
+            boolean_config_options: false,
             mcp_servers,
             initial_client_mcp_servers,
             display_cwd: None,

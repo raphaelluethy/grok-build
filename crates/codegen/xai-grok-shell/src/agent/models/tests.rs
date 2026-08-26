@@ -589,6 +589,53 @@ fn model_show_model_fingerprint_reads_catalog_flag() {
     assert!(mgr.model_show_model_fingerprint("enterprise-key"));
 }
 
+fn test_entry(id: &str, supports_fast_mode: bool) -> ModelEntry {
+    let mut entry = ModelEntry {
+        info: config::ModelInfo::fallback(id),
+        api_key: None,
+        env_key: None,
+        auth_provider: None,
+        api_base_url: None,
+    };
+    entry.info.supports_fast_mode = supports_fast_mode;
+    entry
+}
+
+#[test]
+fn session_fast_mode_uses_request_model_and_stays_isolated() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let mgr = test_manager();
+    mgr.insert_test_entry("fast-model", test_entry("fast-model", true));
+    mgr.insert_test_entry("slow-model", test_entry("slow-model", false));
+    mgr.set_current_model_id(acp::ModelId::new("slow-model"));
+
+    let session_a = std::sync::Arc::new(AtomicBool::new(true));
+    let session_b = std::sync::Arc::new(AtomicBool::new(false));
+
+    assert!(
+        mgr.fast_mode_applies_for_model(session_a.load(Ordering::Relaxed), "fast-model"),
+        "enabled + supported request model must apply priority"
+    );
+    assert!(
+        !mgr.fast_mode_applies_for_model(session_a.load(Ordering::Relaxed), "slow-model"),
+        "enabled + unsupported request model must not apply priority"
+    );
+    assert!(
+        !mgr.fast_mode_applies_for_model(session_b.load(Ordering::Relaxed), "fast-model"),
+        "disabled session must not apply priority even on a supported model"
+    );
+    assert!(
+        !mgr.fast_mode_enabled_for_current_model(),
+        "process-global current model must not drive the session decision"
+    );
+
+    session_a.store(false, Ordering::Relaxed);
+    session_b.store(true, Ordering::Relaxed);
+    assert!(!mgr.fast_mode_applies_for_model(session_a.load(Ordering::Relaxed), "fast-model"));
+    assert!(mgr.fast_mode_applies_for_model(session_b.load(Ordering::Relaxed), "fast-model"));
+}
+
 #[test]
 fn reasoning_effort_helpers_resolve_wire_name_to_catalog_key() {
     let mgr = test_manager();

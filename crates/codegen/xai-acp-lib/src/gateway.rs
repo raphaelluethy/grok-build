@@ -222,6 +222,16 @@ impl<C: acp::Agent + 'static> AcpGatewayReceiver<acp::ClientSide, C> {
                 AcpAgentMessage::SetSessionModel(args) => {
                     handle!(args, self.tracing, conn, set_session_model, spawn, on_meta);
                 }
+                AcpAgentMessage::SetSessionConfigOption(args) => {
+                    handle!(
+                        args,
+                        self.tracing,
+                        conn,
+                        set_session_config_option,
+                        spawn,
+                        on_meta
+                    );
+                }
             }
         }
         if self.tracing {
@@ -504,6 +514,13 @@ impl acp::Agent for AcpGatewaySender<acp::ClientSide> {
         self.forward(args).await
     }
 
+    async fn set_session_config_option(
+        &self,
+        args: acp::SetSessionConfigOptionRequest,
+    ) -> AcpResult<acp::SetSessionConfigOptionResponse> {
+        self.forward(args).await
+    }
+
     async fn prompt(&self, args: acp::PromptRequest) -> AcpResult<acp::PromptResponse> {
         self.forward(args).await
     }
@@ -528,6 +545,7 @@ mod tests {
     use std::rc::Rc;
 
     use agent_client_protocol as acp;
+    use agent_client_protocol::Agent;
 
     struct OrderTrackingClient {
         log: Rc<RefCell<Vec<String>>>,
@@ -689,6 +707,79 @@ mod tests {
                         "{tag} at index {pos} must come after last delta at index {last_delta}"
                     );
                 }
+            })
+            .await;
+    }
+
+    struct ConfigOptionAgent {
+        called: Rc<RefCell<bool>>,
+    }
+
+    #[async_trait::async_trait(?Send)]
+    impl acp::Agent for ConfigOptionAgent {
+        async fn initialize(
+            &self,
+            _: acp::InitializeRequest,
+        ) -> acp::Result<acp::InitializeResponse> {
+            unimplemented!()
+        }
+        async fn authenticate(
+            &self,
+            _: acp::AuthenticateRequest,
+        ) -> acp::Result<acp::AuthenticateResponse> {
+            unimplemented!()
+        }
+        async fn new_session(
+            &self,
+            _: acp::NewSessionRequest,
+        ) -> acp::Result<acp::NewSessionResponse> {
+            unimplemented!()
+        }
+        async fn prompt(&self, _: acp::PromptRequest) -> acp::Result<acp::PromptResponse> {
+            unimplemented!()
+        }
+        async fn cancel(&self, _: acp::CancelNotification) -> acp::Result<()> {
+            unimplemented!()
+        }
+        async fn set_session_config_option(
+            &self,
+            args: acp::SetSessionConfigOptionRequest,
+        ) -> acp::Result<acp::SetSessionConfigOptionResponse> {
+            *self.called.borrow_mut() = true;
+            assert_eq!(args.session_id.0.as_ref(), "sess");
+            assert_eq!(args.config_id.0.as_ref(), "thought_level");
+            Ok(acp::SetSessionConfigOptionResponse::new(vec![
+                acp::SessionConfigOption::select(
+                    "thought_level",
+                    "Thought Level",
+                    "high",
+                    vec![acp::SessionConfigSelectOption::new("high", "High")],
+                ),
+            ]))
+        }
+    }
+
+    #[tokio::test]
+    async fn gateway_routes_set_session_config_option_to_agent() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let called = Rc::new(RefCell::new(false));
+                let (sender, receiver) = acp_gateway::<acp::ClientSide, _>(ConfigOptionAgent {
+                    called: called.clone(),
+                });
+                tokio::task::spawn_local(receiver.run());
+                let response = sender
+                    .set_session_config_option(acp::SetSessionConfigOptionRequest::new(
+                        "sess",
+                        "thought_level",
+                        "high",
+                    ))
+                    .await
+                    .expect("set_session_config_option");
+                assert!(*called.borrow());
+                assert_eq!(response.config_options.len(), 1);
+                assert_eq!(response.config_options[0].id.0.as_ref(), "thought_level");
             })
             .await;
     }

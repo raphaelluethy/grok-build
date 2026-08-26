@@ -195,7 +195,7 @@ pub async fn new_session(
     conn: &acp::ClientSideConnection,
     cwd: &std::path::Path,
 ) -> acp::SessionId {
-    tokio::time::timeout(
+    let response = tokio::time::timeout(
         RPC_TIMEOUT,
         conn.new_session(
             acp::NewSessionRequest::new(cwd.to_path_buf())
@@ -204,8 +204,25 @@ pub async fn new_session(
     )
     .await
     .expect("session/new timed out")
-    .expect("session/new failed")
-    .session_id
+    .expect("session/new failed");
+    let model = response
+        .config_options
+        .as_ref()
+        .and_then(|options| {
+            options
+                .iter()
+                .find(|option| option.id.0.as_ref() == "model")
+        })
+        .expect("session/new must return the standard ACP model config option");
+    assert_eq!(
+        model.category,
+        Some(acp::SessionConfigOptionCategory::Model)
+    );
+    let acp::SessionConfigKind::Select(select) = &model.kind else {
+        panic!("model config option must be a select, got {:?}", model.kind);
+    };
+    assert_eq!(select.current_value.0.as_ref(), "test-model");
+    response.session_id
 }
 
 pub async fn prompt_turn(

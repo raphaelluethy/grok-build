@@ -177,6 +177,15 @@ pub struct ClientCapabilities {
     /// shared session receive the payload too.
     #[serde(default)]
     pub status_line: bool,
+
+    /// Whether this client advertised ACP boolean session config options
+    /// (`params.clientCapabilities.session.configOptions.boolean` as an object).
+    /// Parsed from the raw initialize payload so we do not need an ACP SDK
+    /// upgrade. When set, the leader injects
+    /// [`crate::agent::session_config::BOOLEAN_CONFIG_OPTIONS_META_KEY`] into
+    /// `session/new`, `session/load`, and `session/resume` `_meta`.
+    #[serde(default)]
+    pub boolean_config_options: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

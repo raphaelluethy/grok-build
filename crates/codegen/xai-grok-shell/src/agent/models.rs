@@ -572,13 +572,28 @@ impl ModelsManager {
             .unwrap_or(false)
     }
 
+    /// Current process-config Fast Mode default.
+    pub fn ui_codex_fast_mode(&self) -> bool {
+        self.inner.cfg.read().ui.codex_fast_mode.unwrap_or(false)
+    }
+
+    /// Whether this session should send the Responses API priority service tier
+    /// for `model_id`. Uses the session's own flag and the request/session
+    /// model, not ModelsManager's process-global current model.
+    pub fn fast_mode_applies_for_model(
+        &self,
+        session_fast_mode_enabled: bool,
+        model_id: &str,
+    ) -> bool {
+        session_fast_mode_enabled && self.model_supports_fast_mode(model_id)
+    }
+
     /// Whether Fast Mode is enabled and supported by the active model.
     pub fn fast_mode_enabled_for_current_model(&self) -> bool {
-        if !self.inner.cfg.read().ui.codex_fast_mode.unwrap_or(false) {
-            return false;
-        }
-        let current = self.current_model_id();
-        self.model_supports_fast_mode(current.0.as_ref())
+        self.fast_mode_applies_for_model(
+            self.ui_codex_fast_mode(),
+            self.current_model_id().0.as_ref(),
+        )
     }
 
     /// The model's catalog default reasoning effort.

@@ -2318,7 +2318,20 @@ impl SessionActor {
                 })),
             );
             let mut request = request;
-            if self.models_manager.fast_mode_enabled_for_current_model() {
+            let fast_mode_enabled = if self
+                .fast_mode_overridden
+                .load(std::sync::atomic::Ordering::Acquire)
+            {
+                self.fast_mode_enabled
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            } else {
+                self.models_manager.ui_codex_fast_mode()
+            };
+            if let Some(request_model) = request.model.as_deref().filter(|model| !model.is_empty())
+                && self
+                    .models_manager
+                    .fast_mode_applies_for_model(fast_mode_enabled, request_model)
+            {
                 request.service_tier = Some(xai_grok_sampling_types::rs::ServiceTier::Priority);
             }
             request.x_grok_session_id = Some(self.session_info.id.to_string());

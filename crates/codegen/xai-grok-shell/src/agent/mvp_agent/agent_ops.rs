@@ -3379,50 +3379,142 @@ impl MvpAgent {
         }
         acp::SessionModelState::new(model_id, available_models)
     }
+    /// Whether standard ACP boolean config options may be emitted for this
+    /// session. Kept separate from option-list construction so another slice
+    /// can call it without building model/effort rows.
+    pub(crate) fn session_emits_standard_boolean_config_options(
+        &self,
+        session_id: Option<&acp::SessionId>,
+        session_meta: Option<&acp::Meta>,
+    ) -> bool {
+        let stored = session_id.and_then(|id| {
+            self.resident_handle(id)
+                .map(|handle| handle.boolean_config_options)
+        });
+        session_config::client_supports_standard_boolean_config_options(
+            session_meta,
+            stored,
+            self.initialize_request.get(),
+        )
+    }
+    /// Set one session's Fast Mode flag after validating the current session
+    /// model supports it. Suitable for `session/set_config_option`.
+    pub(crate) fn set_session_fast_mode(
+        &self,
+        session_id: &acp::SessionId,
+        enabled: bool,
+    ) -> Result<bool, acp::Error> {
+        let Some(handle) = self.resident_handle(session_id) else {
+            return Err(acp::Error::invalid_params().data("session not found"));
+        };
+        if enabled
+            && !self
+                .models_manager
+                .model_supports_fast_mode(handle.model_id.0.as_ref())
+        {
+            return Err(
+                acp::Error::invalid_params().data("current model does not support fast mode")
+            );
+        }
+        handle.set_fast_mode_enabled(enabled);
+        Ok(enabled)
+    }
+    /// Current effective Fast Mode flag and whether the session's model supports it.
+    pub(crate) fn session_fast_mode(
+        &self,
+        session_id: &acp::SessionId,
+    ) -> Option<(bool, bool)> {
+        let handle = self.resident_handle(session_id)?;
+        let enabled = handle
+            .fast_mode_override()
+            .unwrap_or_else(|| self.models_manager.ui_codex_fast_mode());
+        let supported = self
+            .models_manager
+            .model_supports_fast_mode(handle.model_id.0.as_ref());
+        Some((enabled, supported))
+    }
+    fn session_config_model_and_effort(
+        &self,
+        session_id: Option<&acp::SessionId>,
+        state: &acp::SessionModelState,
+    ) -> (
+        acp::ModelId,
+        Vec<ReasoningEffortOption>,
+        Option<ReasoningEffort>,
+    ) {
+        let model_id = resolve_catalog_key(
+            &self.models_manager.models(),
+            &state.current_model_id,
+        )
+        .unwrap_or_else(|| state.current_model_id.clone());
+        if !self
+            .models_manager
+            .model_supports_reasoning_effort(model_id.0.as_ref())
+        {
+            return (model_id, Vec::new(), None);
+        }
+        let options = self
+            .models_manager
+            .model_reasoning_efforts(model_id.0.as_ref());
+        let effort_options = if options.is_empty() {
+            session_config::legacy_session_effort_options()
+        } else {
+            options
+        };
+        let current_effort = session_id
+            .and_then(|sid| self.resident_handle(sid).and_then(|h| h.reasoning_effort))
+            .or_else(|| self.models_manager.current_reasoning_effort())
+            .or_else(|| {
+                self.models_manager
+                    .model_default_reasoning_effort(model_id.0.as_ref())
+            });
+        (model_id, effort_options, current_effort)
+    }
     pub(super) fn session_config_options(
         &self,
         session_id: Option<&acp::SessionId>,
         state: &acp::SessionModelState,
     ) -> Vec<session_config::SessionConfigOption> {
-        let model_id = resolve_catalog_key(
-                &self.models_manager.models(),
-                &state.current_model_id,
-            )
-            .unwrap_or_else(|| state.current_model_id.clone());
-        let supports_effort = self
-            .models_manager
-            .model_supports_reasoning_effort(model_id.0.as_ref());
-        let effort_options: Vec<ReasoningEffortOption> = if supports_effort {
-            let options = self
-                .models_manager
-                .model_reasoning_efforts(model_id.0.as_ref());
-            if options.is_empty() {
-                session_config::legacy_session_effort_options()
-            } else {
-                options
-            }
-        } else {
-            Vec::new()
-        };
-        let current_effort = if supports_effort {
-            session_id
-                .and_then(|sid| self.resident_handle(sid).map(|h| h.reasoning_effort))
-                .flatten()
-                .or_else(|| self.models_manager.current_reasoning_effort())
-                .or_else(|| {
-                    self
-                        .models_manager
-                        .model_default_reasoning_effort(model_id.0.as_ref())
-                })
-        } else {
-            None
-        };
+        let (model_id, effort_options, current_effort) =
+            self.session_config_model_and_effort(session_id, state);
         session_config::build_session_config_options(
             &state.available_models,
             &model_id,
             &effort_options,
             current_effort,
         )
+    }
+    pub(super) fn acp_session_config_options(
+        &self,
+        session_id: Option<&acp::SessionId>,
+        state: &acp::SessionModelState,
+    ) -> Vec<acp::SessionConfigOption> {
+        let (model_id, effort_options, current_effort) =
+            self.session_config_model_and_effort(session_id, state);
+        let fast_mode = session_config::FastModeOptionInput {
+            current_value: session_id
+                .and_then(|sid| self.resident_handle(sid))
+                .and_then(|handle| handle.fast_mode_override())
+                .unwrap_or_else(|| self.models_manager.ui_codex_fast_mode()),
+            boolean_supported: self
+                .session_emits_standard_boolean_config_options(session_id, None),
+            model_fast_capable: self
+                .models_manager
+                .model_supports_fast_mode(model_id.0.as_ref()),
+        };
+        session_config::build_acp_session_config_options(
+            &state.available_models,
+            &model_id,
+            &effort_options,
+            current_effort,
+            Some(fast_mode),
+        )
+    }
+    pub(super) fn session_config_effort_options(
+        &self,
+        state: &acp::SessionModelState,
+    ) -> Vec<ReasoningEffortOption> {
+        self.session_config_model_and_effort(None, state).1
     }
     /// Insert the per-session `_meta` keys (`x.ai/sessionConfig`,
     /// `x.ai/sessionDetail`, `x.ai/schedulerBackgroundLoops`) shared by
@@ -4978,6 +5070,8 @@ impl MvpAgent {
         if handle_display_cwd.is_some() {
             handle.display_cwd = handle_display_cwd;
         }
+        handle.boolean_config_options = self
+            .session_emits_standard_boolean_config_options(None, session_meta);
         let source = if chat_history.is_empty() { "new" } else { "load" };
         let _ = handle
             .cmd_tx

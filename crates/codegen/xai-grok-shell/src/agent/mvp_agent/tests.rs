@@ -1201,6 +1201,9 @@ fn make_test_handle(
         signals_handle: crate::session::signals::SessionSignalsHandle::new(),
         gateway_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         status_line_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        fast_mode_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        fast_mode_overridden: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        boolean_config_options: false,
         mcp_servers: vec![],
         initial_client_mcp_servers: vec![],
         display_cwd: None,
@@ -1601,6 +1604,96 @@ async fn session_config_options_resolves_routing_slug_to_catalog_model() {
         opts.iter()
             .any(|o| o.category == "model" && o.id == "catalog-key-model" && o.selected),
         "resolved catalog model must be selected"
+    );
+    let acp_opts = agent.acp_session_config_options(Some(&sid), &state);
+    assert_eq!(acp_opts[0].id.0.as_ref(), "model");
+    match &acp_opts[0].kind {
+        acp::SessionConfigKind::Select(select) => {
+            assert_eq!(select.current_value.0.as_ref(), "catalog-key-model");
+        }
+        other => panic!("expected model select, got {other:?}"),
+    }
+    let thought = acp_opts
+        .iter()
+        .find(|o| o.id.0.as_ref() == "thought_level")
+        .expect("thought_level");
+    match &thought.kind {
+        acp::SessionConfigKind::Select(select) => {
+            assert_eq!(select.current_value.0.as_ref(), "high");
+        }
+        other => panic!("expected thought_level select, got {other:?}"),
+    }
+}
+#[tokio::test]
+async fn session_emits_boolean_config_uses_zed_client_info_without_session() {
+    let agent = build_minimal_agent_for_tests();
+    let init = acp::InitializeRequest::new(acp::ProtocolVersion::V1)
+        .client_info(acp::Implementation::new("zed", "1.0.0"));
+    let _ = agent.initialize_request.set(init);
+    assert!(agent.session_emits_standard_boolean_config_options(None, None));
+}
+#[tokio::test]
+async fn session_emits_boolean_config_prefers_stored_session_verdict() {
+    let agent = build_minimal_agent_for_tests();
+    let init = acp::InitializeRequest::new(acp::ProtocolVersion::V1)
+        .client_info(acp::Implementation::new("zed", "1.0.0"));
+    let _ = agent.initialize_request.set(init);
+    let sid = acp::SessionId::new("sess-bool");
+    let mut handle = make_test_handle("m", false, None);
+    handle.boolean_config_options = false;
+    agent.insert_resident(&sid, handle);
+    assert!(
+        !agent.session_emits_standard_boolean_config_options(Some(&sid), None),
+        "leader-injected false must win over initialize clientInfo.name=zed"
+    );
+}
+#[tokio::test]
+async fn set_session_fast_mode_validates_model_support_and_stays_isolated() {
+    use crate::agent::config::{EndpointsConfig, ModelEntry};
+    let agent = build_minimal_agent_for_tests();
+    let mut fast = ModelEntry::fallback("fast-model", &EndpointsConfig::default());
+    fast.info.supports_fast_mode = true;
+    agent.models_manager.insert_test_entry("fast-model", fast);
+    agent.models_manager.insert_test_entry(
+        "slow-model",
+        ModelEntry::fallback("slow-model", &EndpointsConfig::default()),
+    );
+    let sid_fast = acp::SessionId::new("sess-fast");
+    let sid_slow = acp::SessionId::new("sess-slow");
+    let mut fast_handle = make_test_handle("fast-model", false, None);
+    fast_handle.boolean_config_options = true;
+    agent.insert_resident(&sid_fast, fast_handle);
+    agent.insert_resident(&sid_slow, make_test_handle("slow-model", false, None));
+    assert_eq!(
+        agent.resident_handle(&sid_fast).unwrap().fast_mode_override(),
+        None,
+        "a fresh session must follow live process config until ACP overrides it"
+    );
+    assert!(agent.set_session_fast_mode(&sid_fast, true).unwrap());
+    assert_eq!(
+        agent.resident_handle(&sid_fast).unwrap().fast_mode_override(),
+        Some(true)
+    );
+    assert_eq!(agent.session_fast_mode(&sid_fast), Some((true, true)));
+    let fast_options = agent.acp_session_config_options(
+        Some(&sid_fast),
+        &agent.model_state(Some(&sid_fast)),
+    );
+    let fast_option = fast_options
+        .iter()
+        .find(|option| option.id.0.as_ref() == "fast_mode")
+        .expect("boolean-capable clients must receive fast_mode for a supported model");
+    assert!(matches!(
+        &fast_option.kind,
+        acp::SessionConfigKind::Boolean(value) if value.current_value
+    ));
+    assert!(agent.set_session_fast_mode(&sid_slow, true).is_err());
+    assert!(!agent.set_session_fast_mode(&sid_slow, false).unwrap());
+    assert_eq!(agent.session_fast_mode(&sid_slow), Some((false, false)));
+    assert_eq!(
+        agent.session_fast_mode(&sid_fast),
+        Some((true, true)),
+        "enabling one session must not change another"
     );
 }
 /// YOLO toggle scoped by client_identifier: only matching sessions are updated.

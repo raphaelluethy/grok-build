@@ -320,6 +320,7 @@ pub async fn connect_via_leader(
         fs_read: flags.fs_read,
         fs_write: flags.fs_write,
         status_line: flags.status_line,
+        boolean_config_options: false,
     };
 
     startup::enter(StartupPhase::LeaderConnect);

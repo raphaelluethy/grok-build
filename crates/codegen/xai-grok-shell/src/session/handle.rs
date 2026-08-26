@@ -81,6 +81,18 @@ pub struct SessionHandle {
     /// [`Self::set_status_line_wanted`] at every attach, and when a client
     /// disconnects from a session that stays resident.
     pub status_line_enabled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Session-scoped Fast Mode value, shared with [`SessionActor`].
+    /// It follows live process config until `session/set_config_option` marks
+    /// the corresponding override field.
+    pub fast_mode_enabled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Whether `fast_mode_enabled` was explicitly set through ACP. Until then,
+    /// the session follows live `[ui].codex_fast_mode` config changes.
+    pub fast_mode_overridden: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Whether this session's client supports standard ACP boolean config
+    /// options. Leader mode injects the verdict on `session/new` /
+    /// `session/load` / `session/resume` `_meta`; stored here so later
+    /// config-option emission does not re-read last-initialize state.
+    pub boolean_config_options: bool,
     /// MCP server configs for this session (merged local + client-provided).
     /// Stored on the handle so forked sessions can inherit the parent's
     /// MCP servers without requiring a round-trip through the session actor.
@@ -427,6 +439,25 @@ impl SessionHandle {
         }
         rx.await
             .unwrap_or_else(|_| crate::session::slash_commands::ListCommandsResponse::default())
+    }
+    /// Explicit ACP Fast Mode value, or `None` while the session follows the
+    /// live process configuration.
+    pub fn fast_mode_override(&self) -> Option<bool> {
+        self.fast_mode_overridden
+            .load(std::sync::atomic::Ordering::Acquire)
+            .then(|| {
+                self.fast_mode_enabled
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            })
+    }
+    /// Set this session's Fast Mode toggle. Callers that need model-support
+    /// validation (e.g. `session/set_config_option`) should use
+    /// [`crate::agent::mvp_agent::MvpAgent::set_session_fast_mode`].
+    pub fn set_fast_mode_enabled(&self, enabled: bool) {
+        self.fast_mode_enabled
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+        self.fast_mode_overridden
+            .store(true, std::sync::atomic::Ordering::Release);
     }
     /// Record whether the client now on this session draws a status row.
     ///
