@@ -7,8 +7,16 @@
     <img alt="SpaceXAI logo" src="https://media.x.ai/v1/website/spacexai-symbol-black-transparent-6435cf42.png" width="96">
   </picture>
   <br>
-  Grok Build (<code>grok</code>)
+  Grog (<code>grog</code>)
 </h1>
+
+**Grog** is Raphael Lüthy's unofficial personalized fork of upstream
+[Grok Build](https://github.com/xai-org/grok-build) (`grok`), with custom
+personal-use changes. It is **not** an xAI release.
+
+A thin `grog` wrapper over the upstream `xai-grok-pager` binary keeps crate
+names, `~/.grok`, `GROK_*` variables, URLs, and repository layout compatible
+with upstream.
 
 **Grok Build** is SpaceXAI's terminal-based AI coding agent. It runs as a
 full-screen TUI that understands your codebase, edits files, executes shell
@@ -29,7 +37,8 @@ Protocol (ACP).
 **Learn more about Grok Build at [x.ai/cli](https://x.ai/cli)**
 
 This repository contains the Rust source for the `grok` CLI/TUI and its agent
-runtime. It is synced periodically from the SpaceXAI monorepo.
+runtime, plus a local `grog` command wrapper. It is synced periodically from
+the SpaceXAI monorepo.
 
 A small `SOURCE_REV` file at the root records the full monorepo commit SHA
 for the version of the code present in this tree.
@@ -40,13 +49,16 @@ for the version of the code present in this tree.
 
 ## Installing the released binary
 
-Prebuilt binaries are published for macOS, Linux, and Windows:
+Official [x.ai](https://x.ai/cli) installers still install upstream `grok`,
+not this fork:
 
 ```sh
 curl -fsSL https://x.ai/cli/install.sh | bash   # macOS / Linux / Git Bash
 irm https://x.ai/cli/install.ps1 | iex          # Windows PowerShell
 grok --version
 ```
+
+To run **this** fork, build from source below and use `grog`.
 
 See the [changelog](https://x.ai/build/changelog) for the latest fixes,
 features, and improvements in each release.
@@ -73,13 +85,20 @@ Requirements:
   and not currently tested from this tree.
 
 ```sh
-cargo run -p xai-grok-pager-bin              # build + launch the TUI
-cargo build -p xai-grok-pager-bin --release  # release binary: target/release/xai-grok-pager
-cargo check -p xai-grok-pager-bin            # fast validation
+./build-grog.sh
+./target/release/grog --version
+grog --version
 ```
 
-The binary artifact is named `xai-grok-pager`; official installs ship it as
-`grok`. On first launch it opens your browser to authenticate — see the
+`./build-grog.sh` runs `cargo build -p xai-grok-pager-bin --release` and
+refreshes `target/release/grog` as a relative symlink to the upstream
+`xai-grok-pager` artifact. It also creates or refreshes a persistent
+user-level symlink at `${GROG_BIN_DIR:-$HOME/.local/bin}/grog` pointing
+at that local command. Override the install directory with `GROG_BIN_DIR`
+if needed. The script does not modify shell rc files; a new shell can run
+plain `grog` when that directory is already on `PATH`. Official installs
+still ship that binary as `grok`. On first launch it opens your browser
+to authenticate — see the
 [authentication guide](crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md).
 
 ## Documentation
