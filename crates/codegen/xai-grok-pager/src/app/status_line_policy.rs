@@ -3,7 +3,9 @@
 
 use std::time::Instant;
 
-use xai_grok_status_line::{ResolvedStatusLine, StatusLineContext, StatusLineItem};
+use xai_grok_status_line::{
+    ResolvedStatusLine, StatusLineContext, StatusLineEffort, StatusLineItem,
+};
 
 use super::app_view::{AppView, TickDemand};
 use super::status_line::{
@@ -242,8 +244,10 @@ impl AppView {
         self.update_status_line_at(now);
     }
 
-    /// The fields the shell cannot fill, since only the client knows what the
-    /// session is called. Read here alone, so the overlay and the check agree.
+    /// The fields the shell cannot fill, or cannot fill in time: the session
+    /// name, and the live model effort / fast preference that `/effort` and
+    /// `/fast` change locally. Read here alone, so the overlay and the check
+    /// agree.
     fn client_owned_fields(&self) -> ClientOwnedFields {
         let Some(agent) = self.active_agent() else {
             return ClientOwnedFields::default();
@@ -253,6 +257,16 @@ impl AppView {
                 .display_name
                 .clone()
                 .or_else(|| agent.generated_session_title.clone()),
+            reasoning_effort: agent
+                .session
+                .models
+                .reasoning_effort
+                .map(|effort| effort.to_string()),
+            fast_mode: agent
+                .session
+                .models
+                .current_model_supports_fast_mode()
+                .then_some(crate::app::agent_view::codex_fast_mode_enabled()),
         }
     }
 
@@ -260,8 +274,14 @@ impl AppView {
         let mut ctx = self.active_agent()?.status_context.clone()?;
         // Destructured, so a field added to the overlay is a compile error here
         // rather than one the staleness check watches and nothing applies.
-        let ClientOwnedFields { session_name } = self.client_owned_fields();
+        let ClientOwnedFields {
+            session_name,
+            reasoning_effort,
+            fast_mode,
+        } = self.client_owned_fields();
         ctx.session_name = session_name;
+        ctx.effort = reasoning_effort.map(|level| StatusLineEffort { level });
+        ctx.model.fast_mode = fast_mode;
         Some(ctx)
     }
 

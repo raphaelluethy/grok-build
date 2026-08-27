@@ -52,6 +52,11 @@ fn display_for(text: &str) -> Option<StatusLineDisplay> {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ClientOwnedFields {
     pub(crate) session_name: Option<String>,
+    pub(crate) reasoning_effort: Option<String>,
+    /// `Some` only when the current model supports fast mode, so toggling
+    /// the process-global preference on an unsupported model does not look
+    /// like a change the row must rebuild over.
+    pub(crate) fast_mode: Option<bool>,
 }
 
 /// Identifies one run of the user's script, so a result that outlived the run

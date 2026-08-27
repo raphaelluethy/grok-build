@@ -12,12 +12,12 @@ type = "builtin"
 items = ["cwd", "model", "context"]   # default when omitted
 ```
 
-This renders, for example, `grok-shell-status-line │ Grok 4.5 │ 12% ctx`. Items appear in the order you list them, and long ones are elided with `…`: the directory and session name at 40 columns, the model at 30.
+This renders, for example, `grok-shell-status-line │ Grok 4.5 (high) · fast │ 12% ctx`. Items appear in the order you list them, and long ones are elided with `…`: the directory and session name at 40 columns, the model at 30 (after combining the name with effort and fast/standard suffixes).
 
 | Item | Shows |
 | --- | --- |
 | `cwd` | Current directory (basename) |
-| `model` | Model display name |
+| `model` | Model display name, plus `(effort)` when set, plus `· fast` or `· standard` when the current model supports fast mode |
 | `context` | Context-window percent, amber at the auto-compaction threshold or at 80% when the agent reports none |
 | `cost` | Session cost, hidden below $0.005 so it never shows a misleading `$0.00` |
 | `turn-timer` | Elapsed time of the running turn, from one second in |
@@ -80,7 +80,7 @@ refresh_interval = 300   # seconds
 
 Porting a script, read these closely. `workspace.repo_root` is the repository root, and there is no `project_dir`, a name used elsewhere for a launch directory. `context_window.session_usage` and the `session_*` token counts are cumulative for the session, not one call's, while the live window is `context_window.context_tokens`. There is no list of extra session directories, because Grok has none. `transcript_path` names Grok's own update stream rather than a transcript in another tool's format, and `prompt_id` is present only while a turn runs. In each case a ported script reads nothing rather than a wrong answer, so guard the ones you use.
 
-Nothing outside the table below is sent. A ported script that reads counts of lines the agent changed, a rate-limit summary, an editor mode, a thinking or fast-mode flag, an output style, a pull request, extra session directories, or the directory a worktree was created from will find them absent: each is either a feature Grok does not have or a number it cannot source honestly.
+Nothing outside the table below is sent. A ported script that reads counts of lines the agent changed, a rate-limit summary, an editor mode, a thinking flag, an output style, a pull request, extra session directories, or the directory a worktree was created from will find them absent: each is either a feature Grok does not have or a number it cannot source honestly.
 
 | Field | Description |
 | --- | --- |
@@ -89,6 +89,7 @@ Nothing outside the table below is sent. A ported script that reads counts of li
 | `prompt_id` | UUID of the prompt being processed. Present only during a turn |
 | `transcript_path` | Path to the session's `updates.jsonl`. The file is Grok's own update stream, so a script that parses another tool's transcript format will not read it |
 | `model.id`, `model.display_name` | Model identifier and display name. Omitted when the agent cannot read the session's model |
+| `model.fast_mode` | `true` when Codex fast mode is on, `false` when the current model supports it but it is off. Omitted when the model does not advertise fast mode, so a script cannot mistake an unsupported model for non-fast. Filled in by the client; absent from the `SessionStatus` notification |
 | `workspace.current_dir` | Current directory |
 | `workspace.repo_root` | The repository root, absent outside one. Not `project_dir`, a name used elsewhere for a launch directory |
 | `workspace.branch` | Checked-out branch, in any repo. Absent on a detached HEAD |
@@ -104,7 +105,7 @@ Nothing outside the table below is sent. A ported script that reads counts of li
 | `context_window.used_percentage`, `.remaining_percentage` | How full the window is right now, whole numbers from 0 to 100. Omitted with `context_window_size` or `context_tokens`, since a percentage of an unknown window is not a number |
 | `context_window.session_usage.{input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens}` | `input_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens`, which sum back to `session_input_tokens`, plus `output_tokens`. Cumulative for the session, not one turn's. Absent before the first call |
 | `context_window.auto_compact_threshold_percent` | Where the session auto-compacts. Omitted when the agent reported none |
-| `effort.level` | Reasoning effort, when the model supports it |
+| `effort.level` | Reasoning effort, when the model supports it. Overlaid by the client from the session's live model state, so a local `/effort` change is visible even before the next shell snapshot |
 | `turn.started_at_ms` | Unix milliseconds the turn in flight began, absent between turns. Subtract it from your own clock for an elapsed time |
 | `worktree.{name,path,branch,main_worktree_root}` | Active worktree, inside a linked worktree. `name` is omitted for a worktree at a filesystem root, and `main_worktree_root` is where the worktree branched from |
 | `trigger` | Why this run was invoked: `refresh_interval` for a run the timer asked for, `state` otherwise. Present on a command row's stdin, absent from the `SessionStatus` notification, which describes the session rather than a run |

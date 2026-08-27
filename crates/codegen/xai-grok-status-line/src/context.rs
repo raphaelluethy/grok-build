@@ -102,6 +102,11 @@ pub struct StatusLineModel {
     pub id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    /// Client fast-mode preference. `Some(true/false)` only when the current
+    /// model supports fast mode; omitted otherwise so an unsupported model
+    /// cannot be read as non-fast.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fast_mode: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

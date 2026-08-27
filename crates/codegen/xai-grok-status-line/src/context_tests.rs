@@ -33,6 +33,7 @@ fn every_field_survives_a_round_trip_through_the_shared_fixture() {
         model: StatusLineModel {
             id: Some("grok-4.5".into()),
             display_name: Some("Grok 4.5".into()),
+            fast_mode: Some(true),
         },
         workspace: StatusLineWorkspace {
             current_dir: DIR.into(),
@@ -135,4 +136,32 @@ fn payload_missing_newer_fields_still_deserializes() {
         "absent means the sender predates the field"
     );
     assert!(minimal.context_window.context_window_size.is_none());
+}
+
+#[test]
+fn model_payload_without_fast_still_deserializes() {
+    let model: StatusLineModel =
+        serde_json::from_str(r#"{"id":"grok-4.5","display_name":"Grok 4.5"}"#).unwrap();
+    assert_eq!(model.id.as_deref(), Some("grok-4.5"));
+    assert_eq!(model.display_name.as_deref(), Some("Grok 4.5"));
+    assert_eq!(model.fast_mode, None);
+}
+
+#[test]
+fn model_fast_mode_false_is_written_rather_than_omitted() {
+    let model = StatusLineModel {
+        id: Some("grok-4.5".into()),
+        display_name: Some("Grok 4.5".into()),
+        fast_mode: Some(false),
+    };
+    assert_eq!(
+        serde_json::to_value(&model).unwrap(),
+        json!({
+            "id": "grok-4.5",
+            "display_name": "Grok 4.5",
+            "fast_mode": false,
+        }),
+        "false is a value a script can branch on; omitting it would look like \
+         an unsupported model"
+    );
 }

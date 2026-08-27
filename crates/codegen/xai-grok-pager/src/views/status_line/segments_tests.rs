@@ -1,4 +1,5 @@
 use super::*;
+use xai_grok_status_line::StatusLineEffort;
 
 const DIR: &str = "/home/user/project";
 
@@ -87,4 +88,85 @@ fn context_segment_warns_near_compaction() {
     ctx.context_window.auto_compact_threshold_percent = Some(65);
     ctx.context_window.used_percentage = Some(70);
     assert_eq!(tone(&ctx), SegmentTone::Warn);
+}
+
+fn set_effort(ctx: &mut StatusLineContext, level: &str) {
+    ctx.effort = Some(StatusLineEffort {
+        level: level.into(),
+    });
+}
+
+fn model_text(ctx: &StatusLineContext) -> Option<String> {
+    compose_builtin(ctx, None, &[StatusLineItem::Model])
+        .into_iter()
+        .next()
+        .map(|s| s.text)
+}
+
+#[test]
+fn model_segment_includes_effort_and_fast_when_enabled() {
+    let mut ctx = context();
+    set_effort(&mut ctx, "high");
+    ctx.model.fast_mode = Some(true);
+    assert_eq!(
+        model_text(&ctx).as_deref(),
+        Some("Grok Build (high) · fast")
+    );
+}
+
+#[test]
+fn model_segment_marks_a_fast_capable_model_as_standard_when_off() {
+    let mut ctx = context();
+    set_effort(&mut ctx, "high");
+    ctx.model.fast_mode = Some(false);
+    assert_eq!(
+        model_text(&ctx).as_deref(),
+        Some("Grok Build (high) · standard")
+    );
+}
+
+#[test]
+fn model_segment_omits_fast_indicators_when_the_model_does_not_support_it() {
+    let mut ctx = context();
+    set_effort(&mut ctx, "high");
+    ctx.model.fast_mode = None;
+    assert_eq!(model_text(&ctx).as_deref(), Some("Grok Build (high)"));
+}
+
+#[test]
+fn model_segment_omits_effort_when_unset() {
+    let mut ctx = context();
+    ctx.model.fast_mode = Some(true);
+    assert_eq!(model_text(&ctx).as_deref(), Some("Grok Build · fast"));
+}
+
+#[test]
+fn model_segment_is_omitted_without_a_display_name() {
+    let mut ctx = context();
+    ctx.model.display_name = None;
+    set_effort(&mut ctx, "high");
+    ctx.model.fast_mode = Some(true);
+    assert!(compose_builtin(&ctx, None, &[StatusLineItem::Model]).is_empty());
+
+    ctx.model.display_name = Some(String::new());
+    assert!(compose_builtin(&ctx, None, &[StatusLineItem::Model]).is_empty());
+}
+
+#[test]
+fn model_label_is_fitted_after_effort_and_fast_suffixes() {
+    let mut ctx = context();
+    ctx.model.display_name = Some("M".repeat(MODEL_COLS));
+    set_effort(&mut ctx, "high");
+    ctx.model.fast_mode = Some(true);
+    let cut = model_text(&ctx).expect("a named model still paints");
+    let width = super::super::painted_width(&cut);
+    assert!(
+        cut.ends_with('…'),
+        "a combined label past the budget has to say it was cut: {cut}"
+    );
+    assert!(
+        width <= MODEL_COLS,
+        "{width} columns overruns the {MODEL_COLS} the segment was given; \
+         suffixes must be fitted with the name, not appended after a pre-cut"
+    );
 }

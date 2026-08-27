@@ -2533,7 +2533,10 @@ impl AgentView {
                 bold: false,
             });
         }
-        if codex_fast_mode_enabled() && self.session.models.current_model_supports_fast_mode() {
+        if prompt_header_shows_fast(
+            codex_fast_mode_enabled(),
+            self.session.models.current_model_supports_fast_mode(),
+        ) {
             mode_flags_vec.push(PromptFlag {
                 text: "fast",
                 color: Some(theme.accent_system),
@@ -2553,10 +2556,7 @@ impl AgentView {
         let usage_warning_text: Option<String> = warning.as_ref().map(|(t, _)| t.clone());
         let usage_warning = usage_warning_text.as_deref();
         let usage_warning_critical = warning.is_some_and(|(_, critical)| critical);
-        let model_label = match self.session.models.reasoning_effort {
-            Some(eff) => format!("{model_id} ({eff})"),
-            None => model_id,
-        };
+        let model_label = prompt_header_model_label(model_id, self.session.models.reasoning_effort);
         let info = match &self.prompt_mode {
             PromptMode::Normal => PromptInfo {
                 model_name: &model_label,
@@ -4591,6 +4591,21 @@ fn fit_toast_text(msg: &str, avail_width: u16) -> Option<String> {
     let truncated: String = msg.chars().take(max_msg_chars.saturating_sub(1)).collect();
     Some(format!(" {}… ", truncated.trim_end()))
 }
+
+/// Prompt-header model caption: `{name} ({effort})` when the session has a
+/// reasoning effort, otherwise the name alone.
+fn prompt_header_model_label(model_name: String, effort: Option<impl std::fmt::Display>) -> String {
+    match effort {
+        Some(eff) => format!("{model_name} ({eff})"),
+        None => model_name,
+    }
+}
+
+/// The `fast` PromptFlag is only shown when the preference is on *and* the
+/// current model advertises support, so an unsupported model never looks fast.
+fn prompt_header_shows_fast(fast_enabled: bool, model_supports_fast: bool) -> bool {
+    fast_enabled && model_supports_fast
+}
 #[cfg(test)]
 mod toast_fit_tests {
     use super::fit_toast_text;
@@ -4610,6 +4625,35 @@ mod toast_fit_tests {
     fn zero_width_slot_yields_none() {
         assert_eq!(fit_toast_text("Copied!", 4), None);
         assert_eq!(fit_toast_text("Copied!", 0), None);
+    }
+}
+#[cfg(test)]
+mod prompt_header_label_tests {
+    use super::{prompt_header_model_label, prompt_header_shows_fast};
+    use xai_grok_shell::sampling::types::ReasoningEffort;
+
+    #[test]
+    fn model_caption_includes_effort_when_set() {
+        assert_eq!(
+            prompt_header_model_label("grok-4.5".into(), Some(ReasoningEffort::High)),
+            "grok-4.5 (high)"
+        );
+    }
+
+    #[test]
+    fn model_caption_is_the_name_when_effort_is_unset() {
+        assert_eq!(
+            prompt_header_model_label("grok-4.5".into(), None::<ReasoningEffort>),
+            "grok-4.5"
+        );
+    }
+
+    #[test]
+    fn fast_flag_only_when_enabled_and_the_model_supports_it() {
+        assert!(prompt_header_shows_fast(true, true));
+        assert!(!prompt_header_shows_fast(true, false));
+        assert!(!prompt_header_shows_fast(false, true));
+        assert!(!prompt_header_shows_fast(false, false));
     }
 }
 #[cfg(test)]
