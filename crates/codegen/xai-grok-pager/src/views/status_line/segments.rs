@@ -66,6 +66,33 @@ impl StatusSegment {
     }
 }
 
+/// Combined builtin Model label. Fitted to [`MODEL_COLS`] after this returns,
+/// so effort and fast suffixes are not appended past a pre-truncated name.
+fn model_segment_label(ctx: &StatusLineContext) -> Option<String> {
+    let name = ctx
+        .model
+        .display_name
+        .as_deref()
+        .filter(|s| !s.is_empty())?;
+    let mut label = name.to_string();
+    if let Some(effort) = ctx
+        .effort
+        .as_ref()
+        .map(|e| e.level.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        label.push_str(" (");
+        label.push_str(effort);
+        label.push(')');
+    }
+    match ctx.model.fast_mode {
+        Some(true) => label.push_str(" · fast"),
+        Some(false) => label.push_str(" · standard"),
+        None => {}
+    }
+    Some(label)
+}
+
 #[must_use]
 pub fn compose_builtin(
     ctx: &StatusLineContext,
@@ -80,12 +107,8 @@ pub fn compose_builtin(
                 Some(StatusSegment::dim(fit_columns(short, CWD_COLS)))
             }
             StatusLineItem::Model => {
-                let model = ctx
-                    .model
-                    .display_name
-                    .as_deref()
-                    .filter(|s| !s.is_empty())?;
-                Some(StatusSegment::dim(fit_columns(model, MODEL_COLS)))
+                let label = model_segment_label(ctx)?;
+                Some(StatusSegment::dim(fit_columns(&label, MODEL_COLS)))
             }
             StatusLineItem::Context => {
                 let window = &ctx.context_window;

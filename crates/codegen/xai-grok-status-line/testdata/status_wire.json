@@ -8,7 +8,8 @@
   "transcript_path": "/home/user/sessions/019fa651/updates.jsonl",
   "model": {
     "id": "grok-4.5",
-    "display_name": "Grok 4.5"
+    "display_name": "Grok 4.5",
+    "fast_mode": true
   },
   "workspace": {
     "current_dir": "/home/user/project",

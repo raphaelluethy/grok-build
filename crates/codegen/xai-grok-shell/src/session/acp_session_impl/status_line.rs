@@ -197,6 +197,8 @@ impl SessionActor {
             model: StatusLineModel {
                 id: model_id,
                 display_name,
+                // The client's UI preference; the agent cannot source it.
+                fast_mode: None,
             },
             workspace: StatusLineWorkspace {
                 current_dir: cwd,

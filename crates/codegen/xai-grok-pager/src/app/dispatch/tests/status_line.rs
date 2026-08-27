@@ -5,11 +5,15 @@ use super::*;
 
 use std::time::{Duration, Instant};
 
+use crate::app::agent_view::CodexFastModeGuard;
 use crate::app::app_view::TickDemand;
 use crate::app::status_line::{
     ABANDON_AFTER, EVENT_DEBOUNCE, MIN_REFRESH_INTERVAL_MS, RunId, RunOutcome, test_context,
 };
 use crate::views::status_line::{StatusLineDisplay, StatusLineFrame, StatusSegment};
+use agent_client_protocol as acp;
+use std::sync::Arc;
+use xai_grok_shell::sampling::types::ReasoningEffort;
 use xai_grok_status_line::test_support::StatusLineConfigFixture;
 use xai_grok_status_line::{StatusLineConfig, StatusLineItem, StatusLineType};
 
@@ -244,6 +248,159 @@ fn renaming_the_session_rebuilds_a_row_that_had_already_settled() {
         app.status_line_tick_demand_at(now),
         TickDemand::None,
         "the rebuilt row parks again rather than ticking on the same rename"
+    );
+}
+
+fn install_model(app: &mut AppView, supports_fast: bool) {
+    let id = acp::ModelId::new(Arc::from("grok-4.5"));
+    let meta = supports_fast.then(|| {
+        serde_json::json!({ "supportsFastMode": true })
+            .as_object()
+            .cloned()
+            .expect("object")
+    });
+    let agent = app.agents.get_mut(&AgentId(0)).unwrap();
+    agent.session.models.available.insert(
+        id.clone(),
+        acp::ModelInfo::new(id.clone(), "Grok 4.5".to_string()).meta(meta),
+    );
+    agent.session.models.current = Some(id);
+    if let Some(ctx) = agent.status_context.as_mut() {
+        ctx.model.display_name = Some("Grok 4.5".into());
+    }
+}
+
+fn model_builtin_app() -> AppView {
+    let mut app = status_line_app(StatusLineType::Builtin);
+    app.current_ui.status_line = command_row(StatusLineType::Builtin)
+        .with_items(vec![StatusLineItem::Model])
+        .into_config();
+    app
+}
+
+fn rebuild_after_client_field_change(app: &mut AppView, now: &mut Instant) {
+    assert_eq!(
+        app.status_line_tick_demand_at(*now),
+        TickDemand::Slow,
+        "the row asks for the tick that rebuilds it"
+    );
+    app.update_status_line_at(*now);
+    *now += MIN_REFRESH_INTERVAL_MS;
+    app.update_status_line_at(*now);
+}
+
+fn painted_model(app: &AppView) -> String {
+    let display = app.status_line.display();
+    let Some(StatusLineDisplay::Segments(segments)) = display.as_deref() else {
+        panic!("the row lost its model segment");
+    };
+    segments
+        .iter()
+        .map(StatusSegment::text)
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+#[test]
+fn toggling_effort_rebuilds_a_settled_builtin_row() {
+    let mut now = Instant::now();
+    let mut app = model_builtin_app();
+    install_model(&mut app, false);
+    app.agents
+        .get_mut(&AgentId(0))
+        .unwrap()
+        .session
+        .models
+        .reasoning_effort = Some(ReasoningEffort::High);
+    app.refresh_status_line_now_at(now);
+    assert_eq!(painted_model(&app), "Grok 4.5 (high)");
+    assert_eq!(
+        app.status_line_tick_demand_at(now),
+        TickDemand::None,
+        "a settled row must park the loop, or the assertion below proves nothing"
+    );
+
+    app.agents
+        .get_mut(&AgentId(0))
+        .unwrap()
+        .session
+        .models
+        .reasoning_effort = Some(ReasoningEffort::Low);
+    rebuild_after_client_field_change(&mut app, &mut now);
+    assert_eq!(painted_model(&app), "Grok 4.5 (low)");
+    assert_eq!(
+        app.status_line_tick_demand_at(now),
+        TickDemand::None,
+        "the rebuilt row parks again rather than ticking on the same effort"
+    );
+}
+
+#[test]
+fn toggling_fast_rebuilds_a_settled_builtin_row() {
+    let _fast = CodexFastModeGuard::set(false);
+    let mut now = Instant::now();
+    let mut app = model_builtin_app();
+    install_model(&mut app, true);
+    app.agents
+        .get_mut(&AgentId(0))
+        .unwrap()
+        .session
+        .models
+        .reasoning_effort = Some(ReasoningEffort::High);
+    app.refresh_status_line_now_at(now);
+    assert_eq!(painted_model(&app), "Grok 4.5 (high) · standard");
+    assert_eq!(
+        app.status_line_tick_demand_at(now),
+        TickDemand::None,
+        "a settled row must park the loop, or the assertion below proves nothing"
+    );
+
+    _fast.set_enabled(true);
+    rebuild_after_client_field_change(&mut app, &mut now);
+    assert_eq!(painted_model(&app), "Grok 4.5 (high) · fast");
+}
+
+#[test]
+fn toggling_fast_on_an_unsupported_model_does_not_rebuild() {
+    let _fast = CodexFastModeGuard::set(false);
+    let mut now = Instant::now();
+    let mut app = model_builtin_app();
+    install_model(&mut app, false);
+    app.refresh_status_line_now_at(now);
+    assert_eq!(painted_model(&app), "Grok 4.5");
+    assert_eq!(app.status_line_tick_demand_at(now), TickDemand::None);
+
+    _fast.set_enabled(true);
+    assert_eq!(
+        app.status_line_tick_demand_at(now),
+        TickDemand::None,
+        "an unsupported model must not look like a fast-mode change"
+    );
+    assert_eq!(painted_model(&app), "Grok 4.5");
+}
+
+#[test]
+fn toggling_effort_reruns_a_settled_command_row() {
+    let mut now = Instant::now();
+    let mut app = status_line_app(StatusLineType::Command);
+    app.update_status_line_at(now);
+    app.on_status_line_command_finished_at(now, RunId(0), RunOutcome::Output("row".to_string()));
+    app.pending_effects.clear();
+    assert_eq!(app.status_line_tick_demand_at(now), TickDemand::None);
+
+    app.agents
+        .get_mut(&AgentId(0))
+        .unwrap()
+        .session
+        .models
+        .reasoning_effort = Some(ReasoningEffort::High);
+    assert_eq!(app.status_line_tick_demand_at(now), TickDemand::Slow);
+
+    now += MIN_REFRESH_INTERVAL_MS;
+    app.update_status_line_at(now);
+    assert!(
+        queued_a_run(&app),
+        "a live effort change must re-run the script with the new payload"
     );
 }
 

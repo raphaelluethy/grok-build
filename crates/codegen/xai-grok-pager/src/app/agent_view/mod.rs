@@ -80,6 +80,43 @@ pub(crate) fn codex_fast_mode_enabled() -> bool {
     CODEX_FAST_MODE_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Holds the process-global fast-mode preference for the duration of a test.
+/// The mutex serializes tests that would otherwise race on the atomic.
+#[cfg(test)]
+pub(crate) struct CodexFastModeGuard {
+    previous: bool,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+static CODEX_FAST_MODE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+impl CodexFastModeGuard {
+    pub(crate) fn set(enabled: bool) -> Self {
+        let lock = CODEX_FAST_MODE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = codex_fast_mode_enabled();
+        set_codex_fast_mode_enabled(enabled);
+        Self {
+            previous,
+            _lock: lock,
+        }
+    }
+
+    pub(crate) fn set_enabled(&self, enabled: bool) {
+        set_codex_fast_mode_enabled(enabled);
+    }
+}
+
+#[cfg(test)]
+impl Drop for CodexFastModeGuard {
+    fn drop(&mut self) {
+        set_codex_fast_mode_enabled(self.previous);
+    }
+}
+
 /// Hit areas for inline media buttons, rebuilt each frame.
 ///
 /// All hit areas are cleared at the start of inline media rendering and
