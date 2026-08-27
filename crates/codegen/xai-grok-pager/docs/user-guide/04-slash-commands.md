@@ -109,11 +109,13 @@ Switch models. Accepts a model ID or display name (case-insensitive), and for re
 
 ### `/effort <level>`
 
-Set reasoning effort on the **current** model without reselecting it. Levels are `low`, `medium`, `high`, and `xhigh`, and it only applies when the active model supports reasoning effort.
+Set reasoning effort on the **current** model without reselecting it. Levels are model-specific (commonly `low`, `medium`, `high`, and `xhigh`); the command only applies when the active model supports reasoning effort. Menu option ids are accepted too — for example `/effort deep` maps to the model's canonical `xhigh` when the server remaps that id.
 
 ```
 /effort high
 ```
+
+`Ctrl+Shift+M` opens the effort picker. `Alt+,` (`Option+,` on macOS) lowers thinking effort and `Alt+.` (`Option+.`) raises it, stepping through the current model's advertised levels by strength (not menu order) and clamping at the ends. These are exact Alt chords: do not type `≤` / `≥`, which some macOS layouts produce from Option-compose and which remain normal text. `Ctrl+,` and `Ctrl+.` stay bound to Settings and keyboard shortcuts.
 
 ### `/always-approve` and `/auto`
 
@@ -125,6 +127,10 @@ Both are real toggles for the permission mode: they stay in the menu, and runnin
 | `/auto` | Classifier approves safe tools (dangerous ones may still prompt) | Back to ask |
 
 Running one while the other is active switches modes — for example, `/auto` while always-approve is on switches to auto. `/auto` only appears when the auto permission-mode feature is enabled. You can also change mode with `Shift+Tab` (cycles Normal / Plan / Auto (when enabled) / Always-approve), `Ctrl+O`, or `/settings`.
+
+### `/fast`
+
+Toggle Codex fast mode (priority service tier) on ChatGPT subscription models that support it. The command only appears when the current model advertises fast-mode support; running it on an unsupported model returns an error. Running it while already on turns it back off. You can also change this in `/settings`.
 
 ### `/multiline`
 

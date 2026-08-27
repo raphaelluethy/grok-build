@@ -117,6 +117,12 @@ pub enum ActionId {
     ExitSession,
     CommandPalette,
     ModelPicker,
+    /// Open the reasoning-effort ArgPicker (`/effort`).
+    EffortPicker,
+    /// Step to a lower thinking-effort option on the current model.
+    EffortDown,
+    /// Step to a higher thinking-effort option on the current model.
+    EffortUp,
     ShortcutsHelp,
 
     // Settings
@@ -932,12 +938,17 @@ mod tests {
         // Former mouse-toggle dual bindings removed from scrollback.
         assert_eq!(registry.lookup(&f9, When::ScrollbackFocused), None);
         assert_eq!(registry.lookup(&f9, When::AgentScreen), None);
-        // Ctrl+Shift+M is no longer the voice chord — it resolves to nothing.
+        // Ctrl+Shift+M is the effort picker (agent screen only) — not voice,
+        // and not bound on scrollback / Always.
         assert_eq!(
             registry.lookup(&ctrl_shift_m, When::ScrollbackFocused),
             None
         );
         assert_eq!(registry.lookup(&ctrl_shift_m, When::Always), None);
+        assert_eq!(
+            registry.lookup(&ctrl_shift_m, When::AgentScreen),
+            Some(ActionId::EffortPicker)
+        );
         // Voice capture is bound to BOTH Ctrl+Space and F8, and is global
         // (`When::Always`) so it resolves on the agent screen and the dashboard
         // alike (distinct from Ctrl+M model picker / multiline). It is not
@@ -1063,5 +1074,44 @@ mod tests {
             registry.lookup(&ctrl_x, When::AgentScreen),
             Some(ActionId::ShortcutsHelp)
         );
+    }
+
+    #[test]
+    fn effort_shortcuts_on_agent_screen_preserve_ctrl_comma_and_ctrl_dot() {
+        let registry = ActionRegistry::defaults();
+        let ctrl_shift_m = KeyEvent::new(
+            KeyCode::Char('m'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        );
+        let alt_comma = KeyEvent::new(KeyCode::Char(','), KeyModifiers::ALT);
+        let alt_dot = KeyEvent::new(KeyCode::Char('.'), KeyModifiers::ALT);
+        let ctrl_comma = KeyEvent::new(KeyCode::Char(','), KeyModifiers::CONTROL);
+        let ctrl_dot = KeyEvent::new(KeyCode::Char('.'), KeyModifiers::CONTROL);
+
+        assert_eq!(
+            registry.lookup(&ctrl_shift_m, When::AgentScreen),
+            Some(ActionId::EffortPicker)
+        );
+        assert_eq!(
+            registry.lookup(&alt_comma, When::AgentScreen),
+            Some(ActionId::EffortDown)
+        );
+        assert_eq!(
+            registry.lookup(&alt_dot, When::AgentScreen),
+            Some(ActionId::EffortUp)
+        );
+        // Existing chords stay on OpenSettings / ShortcutsHelp.
+        assert_eq!(
+            registry.lookup(&ctrl_comma, When::AgentScreen),
+            Some(ActionId::OpenSettings)
+        );
+        assert_eq!(
+            registry.lookup(&ctrl_dot, When::AgentScreen),
+            Some(ActionId::ShortcutsHelp)
+        );
+        // Effort step chords must not leak into other contexts.
+        assert_eq!(registry.lookup(&alt_comma, When::Always), None);
+        assert_eq!(registry.lookup(&alt_dot, When::Always), None);
+        assert_eq!(registry.lookup(&ctrl_shift_m, When::Always), None);
     }
 }

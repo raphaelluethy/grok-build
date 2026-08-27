@@ -914,8 +914,10 @@ impl AgentView {
                                     return InputOutcome::Action(Action::FetchSessionList);
                                 }
 
-                                let is_picker =
-                                    matches!(trimmed.as_str(), "model" | "m" | "theme" | "t");
+                                let is_picker = matches!(
+                                    trimmed.as_str(),
+                                    "model" | "m" | "theme" | "t" | "effort"
+                                );
                                 if is_picker
                                     && let Some(command) =
                                         self.prompt.slash_controller.registry().get(&trimmed)
@@ -1907,6 +1909,7 @@ impl AgentView {
                 let title = match command.as_str() {
                     "model" | "m" if !args_query.is_empty() => "Pick reasoning effort",
                     "model" | "m" => "Pick model",
+                    "effort" => "Pick reasoning effort",
                     "theme" | "t" => "Pick theme",
                     _ => "Pick option",
                 };
@@ -3300,5 +3303,147 @@ mod settings_memory_paste_routing_tests {
         };
         assert_eq!(state.query(), "a中b");
         assert_eq!(agent.prompt.text(), "hidden prompt");
+    }
+}
+
+#[cfg(test)]
+mod effort_arg_picker_esc_tests {
+    use crate::app::agent_view::test_fixtures::make_agent;
+    use crate::slash::command::ArgItem;
+    use crate::views::modal::{ActiveModal, PaletteSnapshot};
+    use crate::views::picker::PickerState;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn effort_item() -> ArgItem {
+        ArgItem {
+            display: "high".into(),
+            match_text: "high".into(),
+            insert_text: "high".into(),
+            description: String::new(),
+        }
+    }
+
+    #[test]
+    fn esc_on_effort_picker_restores_palette_not_model() {
+        let mut agent = make_agent();
+        let items = vec![effort_item()];
+        agent.active_modal = Some(ActiveModal::ArgPicker {
+            command: "effort".into(),
+            args_query: String::new(),
+            items: items.clone(),
+            original_items: items,
+            state: PickerState::input_active(),
+            previous_palette: Some(PaletteSnapshot {
+                entries: crate::views::modal::default_palette_entries(
+                    agent.sharing_enabled,
+                    &agent.prompt.slash_controller,
+                ),
+                state: PickerState::input_active(),
+            }),
+            window: crate::views::modal_window::ModalWindowState::new(),
+        });
+        let _ = agent.handle_modal_key(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(
+            matches!(agent.active_modal, Some(ActiveModal::CommandPalette { .. })),
+            "Esc on the effort-only picker must restore the prior palette"
+        );
+    }
+
+    #[test]
+    fn esc_on_effort_picker_with_query_does_not_step_to_model() {
+        let mut agent = make_agent();
+        let items = vec![effort_item()];
+        agent.active_modal = Some(ActiveModal::ArgPicker {
+            command: "effort".into(),
+            args_query: "high".into(),
+            items: items.clone(),
+            original_items: items,
+            state: PickerState::input_active(),
+            previous_palette: Some(PaletteSnapshot {
+                entries: crate::views::modal::default_palette_entries(
+                    agent.sharing_enabled,
+                    &agent.prompt.slash_controller,
+                ),
+                state: PickerState::input_active(),
+            }),
+            window: crate::views::modal_window::ModalWindowState::new(),
+        });
+        let _ = agent.handle_modal_key(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(
+            matches!(agent.active_modal, Some(ActiveModal::CommandPalette { .. })),
+            "Esc must not step the effort-only picker back to /model"
+        );
+    }
+
+    fn open_palette_on_reasoning_effort(agent: &mut crate::app::agent_view::AgentView) {
+        let entries = crate::views::modal::default_palette_entries(
+            agent.sharing_enabled,
+            &agent.prompt.slash_controller,
+        );
+        let idx = entries
+            .iter()
+            .position(|e| e.label == "Reasoning Effort")
+            .expect("Reasoning Effort palette row");
+        let mut state = PickerState::default();
+        state.selected = idx;
+        agent.active_modal = Some(ActiveModal::CommandPalette {
+            entries,
+            state,
+            window: crate::views::modal_window::ModalWindowState::new(),
+        });
+    }
+
+    #[test]
+    fn palette_reasoning_effort_row_opens_arg_picker_when_supported() {
+        use crate::app::app_view::InputOutcome;
+        use agent_client_protocol as acp;
+        use crossterm::event::Event;
+        use std::sync::Arc;
+
+        let mut agent = make_agent();
+        let id = acp::ModelId::new(Arc::from("reasoning-x"));
+        let info = acp::ModelInfo::new(id.clone(), "Reasoning X".to_string()).meta(
+            serde_json::json!({ "supportsReasoningEffort": true })
+                .as_object()
+                .cloned(),
+        );
+        agent.session.models.available.insert(id.clone(), info);
+        agent.session.models.current = Some(id);
+        open_palette_on_reasoning_effort(&mut agent);
+        let out = agent.handle_palette_or_arg_input(&Event::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
+        assert!(matches!(out, InputOutcome::Changed));
+        assert!(
+            matches!(
+                agent.active_modal,
+                Some(ActiveModal::ArgPicker { ref command, .. }) if command == "effort"
+            ),
+            "selecting Reasoning Effort must open the effort ArgPicker"
+        );
+    }
+
+    #[test]
+    fn palette_reasoning_effort_row_without_options_runs_effort_command() {
+        use crate::app::actions::Action;
+        use crate::app::app_view::InputOutcome;
+        use crossterm::event::Event;
+
+        let mut agent = make_agent();
+        open_palette_on_reasoning_effort(&mut agent);
+        let out = agent.handle_palette_or_arg_input(&Event::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
+        assert!(
+            matches!(
+                out,
+                InputOutcome::Action(Action::SendSlashCommandPreservingDraft(ref cmd))
+                    if cmd.trim() == "/effort"
+            ),
+            "unsupported palette pick must dispatch /effort"
+        );
+        assert!(agent.active_modal.is_none());
     }
 }

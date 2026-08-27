@@ -25,6 +25,7 @@ pub mod effort_levels;
 pub mod exit;
 pub mod expand;
 pub mod export;
+pub mod fast;
 pub mod feedback;
 pub mod find;
 pub mod fork;
@@ -129,6 +130,7 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(theme::ThemeCommand),
         Arc::new(auto::AutoCommand),
         Arc::new(always_approve::AlwaysApproveCommand),
+        Arc::new(fast::FastCommand),
         Arc::new(vim_mode::VimModeCommand),
         Arc::new(multiline::MultilineCommand),
         Arc::new(compact_mode::CompactModeCommand),

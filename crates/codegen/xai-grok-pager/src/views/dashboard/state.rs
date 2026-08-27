@@ -4625,6 +4625,9 @@ fn dashboard_action_for_id(
         | ActionId::NewSessionInWorktree
         | ActionId::CommandPalette
         | ActionId::ModelPicker
+        | ActionId::EffortPicker
+        | ActionId::EffortDown
+        | ActionId::EffortUp
         | ActionId::ShortcutsHelp
         | ActionId::OpenSettings
         | ActionId::OpenDashboard

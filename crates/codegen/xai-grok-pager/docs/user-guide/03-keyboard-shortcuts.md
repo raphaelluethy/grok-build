@@ -223,6 +223,9 @@ Actions that affect the agent session, available from the agent screen.
 | `Ctrl+P` | Agent screen | Open the command palette |
 | `?` (Shift+/) | Agent screen | Open the command palette (alt binding) |
 | `Ctrl+M` | Agent screen | Open the model picker / switch model |
+| `Ctrl+Shift+M` | Agent screen | Open the reasoning-effort picker |
+| `Alt+,` (`Option+,`) | Agent screen | Lower thinking effort on the current model |
+| `Alt+.` (`Option+.`) | Agent screen | Raise thinking effort on the current model |
 | `Ctrl+M` | Prompt focused | Toggle multiline input mode |
 | `Ctrl+C` | Agent screen | Cancel the current turn (or clear non-empty draft first; see Escape table) |
 | `Ctrl+O` | Agent screen | Toggle always-approve (YOLO) mode |
@@ -240,7 +243,7 @@ Actions that affect the agent session, available from the agent screen.
 | `Ctrl+.` (alt: `Ctrl+X`) | Agent screen | Open the keyboard shortcuts help |
 | `F2` (alt: `Ctrl+,` / `Cmd+,`) | Agent screen | Open the settings modal |
 
-**Note:** `Ctrl+M` is context-dependent. When the prompt is focused, it toggles multiline input mode. Otherwise, it opens the model picker.
+**Note:** `Ctrl+M` is context-dependent. When the prompt is focused, it toggles multiline input mode. Otherwise, it opens the model picker. `Ctrl+Shift+M` always opens the effort picker. `Alt+,` / `Alt+.` are exact Alt chords (not `Ctrl+,` / `Ctrl+.`, which stay Settings / shortcuts, and not the `≤` / `≥` characters some macOS Option-compose layouts insert as normal text).
 
 **Note:** While a draft is stashed, the prompt's top border reads `Stashed` (next to the `/rename` title, if you set one). Minimal mode draws no border, so it prints a line in the scrollback each time you stash or restore. The stash lives in memory only: it is gone when you quit, and it does not travel to a resumed session. A new stash replaces the old one, and only the old one's **text** moves to the `↑` history, so any images on the replaced draft are lost.
 

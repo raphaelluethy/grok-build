@@ -305,6 +305,10 @@ pub struct PagerLocalSnapshot {
     /// `AppView::scheduler_background_loops_seed` before the session response
     /// lands. `/loop` reads it to describe where a scheduled fire runs.
     pub scheduler_background_loops: bool,
+    /// Live `[ui].codex_fast_mode` mirror. Read by `/fast` so it can
+    /// dispatch `Action::SetCodexFastMode(!current)`. Default `false`
+    /// matches `UiConfig::codex_fast_mode.unwrap_or(false)`.
+    pub codex_fast_mode: bool,
 }
 
 impl Default for PagerLocalSnapshot {
@@ -331,6 +335,7 @@ impl Default for PagerLocalSnapshot {
             voice_stt_language: xai_grok_voice::STT_LANGUAGE_DEFAULT.to_string(),
             // Matches `resolve_scheduler_background_loops`'s default.
             scheduler_background_loops: true,
+            codex_fast_mode: false,
         }
     }
 }

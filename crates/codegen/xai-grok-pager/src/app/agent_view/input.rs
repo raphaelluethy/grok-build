@@ -1302,7 +1302,11 @@ impl AgentView {
         }
         let action_id = registry.lookup(key, When::AgentScreen)?;
         match action_id {
-            ActionId::ModelPicker | ActionId::CommandPalette => {
+            ActionId::ModelPicker
+            | ActionId::CommandPalette
+            | ActionId::EffortPicker
+            | ActionId::EffortDown
+            | ActionId::EffortUp => {
                 if typing
                     && !key
                         .modifiers
@@ -1381,26 +1385,20 @@ impl AgentView {
                 InputOutcome::Changed
             }
             ActionId::ModelPicker => {
-                let command = "model";
-                if let Some(cmd) = self.prompt.slash_controller.registry().get(command) {
-                    let ctx = self.prompt.slash_controller.app_ctx(&self.session.models);
-                    if let Some(items) = cmd.suggest_args(&ctx, "")
-                        && !items.is_empty()
-                    {
-                        self.active_modal = Some(crate::views::modal::ActiveModal::ArgPicker {
-                            command: command.to_string(),
-                            args_query: String::new(),
-                            items: items.clone(),
-                            original_items: items,
-                            state: crate::views::picker::PickerState::input_active(),
-                            previous_palette: None,
-                            window: crate::views::modal_window::ModalWindowState::new(),
-                        });
-                        return InputOutcome::Changed;
-                    }
-                }
+                self.try_open_command_arg_picker("model");
                 InputOutcome::Changed
             }
+            ActionId::EffortPicker => {
+                if self.try_open_command_arg_picker("effort") {
+                    InputOutcome::Changed
+                } else {
+                    // Same `/effort` path as typing the command: empty args
+                    // surfaces a toast instead of an empty picker.
+                    InputOutcome::Action(Action::SendSlashCommandPreservingDraft("/effort".into()))
+                }
+            }
+            ActionId::EffortDown => self.step_reasoning_effort(false),
+            ActionId::EffortUp => self.step_reasoning_effort(true),
             ActionId::ShortcutsHelp => {
                 use crate::views::shortcuts_help;
                 let mut contexts = active_contexts_for_pane(self.active_pane);
@@ -1433,6 +1431,47 @@ impl AgentView {
             }
             other => resolve_action(Some(other)).unwrap_or(InputOutcome::Unchanged),
         }
+    }
+    /// Open an ArgPicker for `command` from its `suggest_args` list.
+    /// Returns `true` when a non-empty picker was opened.
+    fn try_open_command_arg_picker(&mut self, command: &str) -> bool {
+        let Some(cmd) = self.prompt.slash_controller.registry().get(command) else {
+            return false;
+        };
+        let ctx = self.prompt.slash_controller.app_ctx(&self.session.models);
+        let Some(items) = cmd.suggest_args(&ctx, "") else {
+            return false;
+        };
+        if items.is_empty() {
+            return false;
+        }
+        self.active_modal = Some(crate::views::modal::ActiveModal::ArgPicker {
+            command: command.to_string(),
+            args_query: String::new(),
+            items: items.clone(),
+            original_items: items,
+            state: crate::views::picker::PickerState::input_active(),
+            previous_palette: None,
+            window: crate::views::modal_window::ModalWindowState::new(),
+        });
+        true
+    }
+    /// Step through the current model's advertised effort options by
+    /// semantic strength (`none < … < max`), not menu order. `raise` moves
+    /// to the nearest stronger offered value. Clamps; never wraps.
+    fn step_reasoning_effort(&mut self, raise: bool) -> InputOutcome {
+        let options = self.session.models.reasoning_effort_options();
+        let Some(option) = crate::slash::commands::effort_levels::step_effort_option(
+            &options,
+            self.session.models.reasoning_effort,
+            raise,
+        ) else {
+            return InputOutcome::Action(Action::SendSlashCommandPreservingDraft("/effort".into()));
+        };
+        InputOutcome::Action(Action::SendSlashCommandPreservingDraft(format!(
+            "/effort {}",
+            option.id
+        )))
     }
     /// Returns `true` if the switch happened immediately, `false` if blocked.
     pub(crate) fn set_active_pane(&mut self, target: AgentPane, force: bool) -> bool {
@@ -2486,6 +2525,223 @@ mod plan_approval_model_handoff_tests {
         agent.handle_input(&Event::Key(key!(Esc).to_key_event()), &reg);
         assert!(agent.active_modal.is_none());
         assert!(agent.plan_approval_view.is_some());
+    }
+
+    fn with_reasoning_model(agent: &mut crate::app::agent_view::AgentView) {
+        let id = acp::ModelId::new(Arc::from("reasoning-x"));
+        let info = acp::ModelInfo::new(id.clone(), "Reasoning X".to_string()).meta(
+            serde_json::json!({ "supportsReasoningEffort": true })
+                .as_object()
+                .cloned(),
+        );
+        agent.session.models.available.insert(id.clone(), info);
+        agent.session.models.current = Some(id);
+        agent.session.models.reasoning_effort =
+            Some(xai_grok_shell::sampling::types::ReasoningEffort::Medium);
+    }
+
+    #[test]
+    fn effort_picker_during_plan_approval() {
+        let mut agent = make_agent();
+        with_reasoning_model(&mut agent);
+        agent.plan_approval_view = Some(make_plan_approval_view_state());
+        agent.reopen_plan_approval();
+        let reg = ActionRegistry::defaults();
+        agent.handle_input(&Event::Key(key!('m', CONTROL | SHIFT).to_key_event()), &reg);
+        assert!(matches!(
+            agent.active_modal,
+            Some(ActiveModal::ArgPicker { ref command, .. }) if command == "effort"
+        ));
+        agent.handle_input(&Event::Key(key!(Esc).to_key_event()), &reg);
+        assert!(agent.active_modal.is_none());
+        assert!(agent.plan_approval_view.is_some());
+    }
+
+    #[test]
+    fn effort_step_during_plan_approval() {
+        use crate::app::actions::Action;
+        use crate::app::app_view::InputOutcome;
+        let mut agent = make_agent();
+        with_reasoning_model(&mut agent);
+        agent.prompt.set_text("keep me");
+        agent.plan_approval_view = Some(make_plan_approval_view_state());
+        agent.reopen_plan_approval();
+        let reg = ActionRegistry::defaults();
+        let outcome = agent.handle_input(&Event::Key(key!('.', ALT).to_key_event()), &reg);
+        assert!(
+            matches!(
+                outcome,
+                InputOutcome::Action(Action::SendSlashCommandPreservingDraft(ref cmd))
+                    if cmd == "/effort high"
+            ),
+            "Alt+. should raise medium → high, got {outcome:?}"
+        );
+        assert_eq!(agent.prompt.text(), "keep me");
+        assert!(agent.plan_approval_view.is_some());
+    }
+}
+#[cfg(test)]
+mod effort_picker_and_step_tests {
+    use super::test_fixtures::make_agent;
+    use crate::actions::ActionId;
+    use crate::app::actions::Action;
+    use crate::app::app_view::InputOutcome;
+    use crate::views::modal::ActiveModal;
+    use agent_client_protocol as acp;
+    use std::sync::Arc;
+    use xai_grok_shell::sampling::types::ReasoningEffort;
+
+    fn with_reasoning_model(agent: &mut crate::app::agent_view::AgentView) {
+        let id = acp::ModelId::new(Arc::from("reasoning-x"));
+        let info = acp::ModelInfo::new(id.clone(), "Reasoning X".to_string()).meta(
+            serde_json::json!({ "supportsReasoningEffort": true })
+                .as_object()
+                .cloned(),
+        );
+        agent.session.models.available.insert(id.clone(), info);
+        agent.session.models.current = Some(id);
+        agent.session.models.reasoning_effort = Some(ReasoningEffort::Medium);
+    }
+
+    #[test]
+    fn effort_picker_opens_arg_picker() {
+        let mut agent = make_agent();
+        with_reasoning_model(&mut agent);
+        agent.prompt.set_text("draft");
+        let outcome = agent.handle_agent_action(ActionId::EffortPicker);
+        assert!(matches!(outcome, InputOutcome::Changed));
+        match &agent.active_modal {
+            Some(ActiveModal::ArgPicker {
+                command,
+                args_query,
+                ..
+            }) => {
+                assert_eq!(command, "effort");
+                assert!(args_query.is_empty());
+                assert_eq!(
+                    agent.active_modal.as_ref().unwrap().message(false),
+                    "Pick reasoning effort"
+                );
+            }
+            _ => panic!("expected effort ArgPicker"),
+        }
+        assert_eq!(agent.prompt.text(), "draft");
+    }
+
+    #[test]
+    fn effort_picker_without_options_dispatches_effort_command() {
+        let mut agent = make_agent();
+        agent.prompt.set_text("draft");
+        let outcome = agent.handle_agent_action(ActionId::EffortPicker);
+        assert!(
+            matches!(
+                outcome,
+                InputOutcome::Action(Action::SendSlashCommandPreservingDraft(ref cmd))
+                    if cmd == "/effort"
+            ),
+            "unsupported/no-current must dispatch /effort, got {outcome:?}"
+        );
+        assert!(
+            agent.active_modal.is_none(),
+            "must not open an empty picker"
+        );
+        assert_eq!(agent.prompt.text(), "draft");
+    }
+
+    #[test]
+    fn effort_up_and_down_dispatch_option_ids() {
+        let mut agent = make_agent();
+        with_reasoning_model(&mut agent);
+        agent.prompt.set_text("draft");
+        let up = agent.handle_agent_action(ActionId::EffortUp);
+        assert!(
+            matches!(
+                up,
+                InputOutcome::Action(Action::SendSlashCommandPreservingDraft(ref cmd))
+                    if cmd == "/effort high"
+            ),
+            "raise medium → high, got {up:?}"
+        );
+        let down = agent.handle_agent_action(ActionId::EffortDown);
+        assert!(
+            matches!(
+                down,
+                InputOutcome::Action(Action::SendSlashCommandPreservingDraft(ref cmd))
+                    if cmd == "/effort low"
+            ),
+            "lower medium → low, got {down:?}"
+        );
+        assert_eq!(agent.prompt.text(), "draft");
+    }
+
+    #[test]
+    fn effort_step_clamps_at_boundary() {
+        let mut agent = make_agent();
+        with_reasoning_model(&mut agent);
+        agent.session.models.reasoning_effort = Some(ReasoningEffort::Xhigh);
+        let up = agent.handle_agent_action(ActionId::EffortUp);
+        assert!(
+            matches!(
+                up,
+                InputOutcome::Action(Action::SendSlashCommandPreservingDraft(ref cmd))
+                    if cmd == "/effort xhigh"
+            ),
+            "raise at strongest stays xhigh, got {up:?}"
+        );
+        agent.session.models.reasoning_effort = Some(ReasoningEffort::Low);
+        let down = agent.handle_agent_action(ActionId::EffortDown);
+        assert!(
+            matches!(
+                down,
+                InputOutcome::Action(Action::SendSlashCommandPreservingDraft(ref cmd))
+                    if cmd == "/effort low"
+            ),
+            "lower at weakest stays low, got {down:?}"
+        );
+    }
+
+    #[test]
+    fn effort_step_uses_remapped_option_id() {
+        let mut agent = make_agent();
+        let id = acp::ModelId::new(Arc::from("reasoning-x"));
+        let info = acp::ModelInfo::new(id.clone(), "Reasoning X".to_string()).meta(
+            serde_json::json!({
+                "supportsReasoningEffort": true,
+                "reasoningEfforts": [
+                    { "id": "deep", "value": "xhigh", "label": "Deep" },
+                    { "id": "high", "value": "high", "label": "High" },
+                ],
+            })
+            .as_object()
+            .cloned(),
+        );
+        agent.session.models.available.insert(id.clone(), info);
+        agent.session.models.current = Some(id);
+        agent.session.models.reasoning_effort = Some(ReasoningEffort::High);
+        let up = agent.handle_agent_action(ActionId::EffortUp);
+        assert!(
+            matches!(
+                up,
+                InputOutcome::Action(Action::SendSlashCommandPreservingDraft(ref cmd))
+                    if cmd == "/effort deep"
+            ),
+            "raise high → remapped deep, got {up:?}"
+        );
+    }
+
+    #[test]
+    fn effort_step_without_options_dispatches_effort_command() {
+        let mut agent = make_agent();
+        let outcome = agent.handle_agent_action(ActionId::EffortUp);
+        assert!(
+            matches!(
+                outcome,
+                InputOutcome::Action(Action::SendSlashCommandPreservingDraft(ref cmd))
+                    if cmd == "/effort"
+            ),
+            "unsupported step must dispatch /effort, got {outcome:?}"
+        );
+        assert!(agent.active_modal.is_none());
     }
 }
 #[cfg(test)]
