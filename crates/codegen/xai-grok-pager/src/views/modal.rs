@@ -476,6 +476,11 @@ pub(crate) fn default_palette_entries(
             command: PaletteCommand::SlashCommand("/model ".into()),
         },
         PaletteEntry {
+            label: "Reasoning Effort".into(),
+            shortcut: "/effort".into(),
+            command: PaletteCommand::SlashCommand("/effort ".into()),
+        },
+        PaletteEntry {
             label: "Always Approve Mode".into(),
             shortcut: "/always-approve".into(),
             command: PaletteCommand::SlashCommand("/always-approve".into()),
@@ -696,6 +701,7 @@ impl ActiveModal {
             } => match command.as_str() {
                 "model" | "m" if !args_query.is_empty() => "Pick reasoning effort",
                 "model" | "m" => "Pick model",
+                "effort" => "Pick reasoning effort",
                 "theme" | "t" => "Pick theme",
                 _ => "Pick option",
             },
@@ -1369,6 +1375,34 @@ mod palette_sharing_tests {
             "palette entry must use the 'Agent Dashboard' label"
         );
     }
+    #[test]
+    fn default_palette_includes_reasoning_effort_under_model_input() {
+        let entries = default_palette_entries(true, &slash(crate::app::ScreenMode::Fullscreen));
+        let section = entries
+            .iter()
+            .position(|e| e.label == "Model & Input")
+            .expect("Model & Input section");
+        let model = entries
+            .iter()
+            .position(|e| e.label == "Switch Model")
+            .expect("Switch Model row");
+        let effort = entries
+            .iter()
+            .position(|e| e.label == "Reasoning Effort")
+            .expect("Reasoning Effort row");
+        assert!(
+            section < model && model < effort,
+            "Reasoning Effort must follow Switch Model under Model & Input"
+        );
+        assert!(
+            matches!(
+                &entries[effort].command,
+                PaletteCommand::SlashCommand(s) if s == "/effort "
+            ),
+            "Reasoning Effort must dispatch `/effort ` so the picker allowlist opens"
+        );
+        assert_eq!(entries[effort].shortcut, "/effort");
+    }
     fn slash_rows(mode: crate::app::ScreenMode) -> Vec<String> {
         default_palette_entries(true, &slash(mode))
             .into_iter()
@@ -1523,6 +1557,28 @@ mod palette_sharing_tests {
             entries.first().map(|e| e.title.as_str()),
             Some("Getting Started")
         );
+    }
+
+    #[test]
+    fn arg_picker_titles() {
+        fn picker(command: &str, args_query: &str) -> ActiveModal {
+            ActiveModal::ArgPicker {
+                command: command.into(),
+                args_query: args_query.into(),
+                items: Vec::new(),
+                original_items: Vec::new(),
+                state: crate::views::picker::PickerState::input_active(),
+                previous_palette: None,
+                window: crate::views::modal_window::ModalWindowState::new(),
+            }
+        }
+        assert_eq!(picker("model", "").message(false), "Pick model");
+        assert_eq!(
+            picker("model", "grok ").message(false),
+            "Pick reasoning effort"
+        );
+        assert_eq!(picker("effort", "").message(false), "Pick reasoning effort");
+        assert_eq!(picker("theme", "").message(false), "Pick theme");
     }
 }
 #[cfg(test)]

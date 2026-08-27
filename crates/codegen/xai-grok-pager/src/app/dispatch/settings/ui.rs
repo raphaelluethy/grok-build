@@ -98,6 +98,7 @@ pub(crate) fn refresh_open_settings_modals(app: &mut AppView) {
                 scheduler_background_loops: agent
                     .scheduler_background_loops
                     .unwrap_or(scheduler_background_loops_seed),
+                codex_fast_mode: ui_snapshot.codex_fast_mode.unwrap_or(false),
             };
         }
     }
@@ -248,6 +249,7 @@ pub(in crate::app::dispatch) fn dispatch_open_settings(
         scheduler_background_loops: agent
             .scheduler_background_loops
             .unwrap_or(scheduler_background_loops_seed),
+        codex_fast_mode: ui_snapshot.codex_fast_mode.unwrap_or(false),
     };
     let mut state = Box::new(SettingsModalState::new(
         registry,
@@ -744,6 +746,7 @@ pub(crate) fn build_pager_snapshot(app: &AppView) -> crate::settings::PagerLocal
         ask_user_question_timeout_enabled: app.ask_user_question_timeout_enabled,
         voice_stt_language: app.voice_config.language.clone(),
         scheduler_background_loops: agent_scheduler_background_loops(app),
+        codex_fast_mode: app.current_ui.codex_fast_mode.unwrap_or(false),
     }
 }
 

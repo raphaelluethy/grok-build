@@ -2221,7 +2221,10 @@ fn resolve_action(action_id: Option<ActionId>) -> Option<InputOutcome> {
         | ActionId::NewSession
         | ActionId::NewSessionInWorktree
         | ActionId::CommandPalette
-        | ActionId::ModelPicker => return None,
+        | ActionId::ModelPicker
+        | ActionId::EffortPicker
+        | ActionId::EffortDown
+        | ActionId::EffortUp => return None,
         ActionId::DumpInputLog => return None,
         ActionId::ToggleYolo => return None,
         ActionId::ToggleMultiline => return None,

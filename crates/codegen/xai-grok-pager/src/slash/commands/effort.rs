@@ -37,6 +37,10 @@ impl SlashCommand for EffortCommand {
         true
     }
 
+    fn visible(&self, ctx: &AppCtx) -> bool {
+        !ctx.models.reasoning_effort_options().is_empty()
+    }
+
     fn arg_placeholder(&self) -> Option<&str> {
         Some("<level>")
     }
@@ -72,11 +76,12 @@ impl SlashCommand for EffortCommand {
                 .reasoning_effort
                 .map(|e| format!(" (current: {e})"))
                 .unwrap_or_default();
-            let levels = if offered.is_empty() {
-                "<level>".to_string()
-            } else {
-                offered.join("|")
-            };
+            if offered.is_empty() {
+                return CommandResult::Error(
+                    crate::acp::model_state::EffortTokenError::Unsupported.message(),
+                );
+            }
+            let levels = offered.join("|");
             return CommandResult::Error(format!("Usage: /effort <{levels}>{current}"));
         }
 
@@ -303,6 +308,11 @@ mod tests {
             result,
             CommandResult::Error(msg) if msg.contains("does not support reasoning effort")
         ));
+        let empty = EffortCommand.run(&mut ctx, "");
+        assert!(matches!(
+            empty,
+            CommandResult::Error(msg) if msg.contains("does not support reasoning effort")
+        ));
     }
 
     #[test]
@@ -382,5 +392,40 @@ mod tests {
         assert_eq!(items[3].insert_text, "low");
         assert!(items[0].match_text.starts_with("a "));
         assert!(items[3].match_text.starts_with("d "));
+    }
+
+    fn app_ctx<'a>(models: &'a ModelState) -> AppCtx<'a> {
+        AppCtx {
+            models,
+            cwd: std::path::Path::new("."),
+            has_session_announcements: false,
+            billing_surface_visible: true,
+            usage_command_visible: true,
+            workflows_available: true,
+            saved_workflows: &[],
+            workflow_runs: &[],
+            screen_mode: crate::app::ScreenMode::Fullscreen,
+            current_title: None,
+        }
+    }
+
+    #[test]
+    fn visible_when_model_advertises_effort_options() {
+        let mut state = ModelState::default();
+        let (id, info) = model_with_reasoning("reasoning-x", "Reasoning X");
+        state.available.insert(id.clone(), info);
+        state.current = Some(id);
+        assert!(EffortCommand.visible(&app_ctx(&state)));
+    }
+
+    #[test]
+    fn hidden_when_unsupported_or_no_current() {
+        assert!(!EffortCommand.visible(&app_ctx(&ModelState::default())));
+
+        let mut plain = ModelState::default();
+        let (id, info) = plain_model("grok-4.5", "Grok 4.5");
+        plain.available.insert(id.clone(), info);
+        plain.current = Some(id);
+        assert!(!EffortCommand.visible(&app_ctx(&plain)));
     }
 }
