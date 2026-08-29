@@ -235,9 +235,14 @@ impl MvpAgent {
             auth: self.current_or_buffered_auth(),
             parent_cwd: parent_cwd.clone(),
             parent_session_id: parent_session_id.to_string(),
+            active_message_parent_prompt_index: parent_handle
+                .as_ref()?
+                .tool_context
+                .active_message_parent_prompt_index
+                .clone(),
             inherited_tool_overrides,
             yolo_mode,
-            subagent_event_tx: self.subagent_event_tx.clone(),
+            subagent_event_tx: self.subagent_event_tx.event_sender().0,
             parent_depth,
             subagents_max_depth: self.cfg.borrow().subagents_max_depth,
             workflow_max_concurrent_agents: self.cfg.borrow().workflow_max_concurrent_agents,
@@ -340,6 +345,9 @@ impl MvpAgent {
                 .unwrap_or_else(|| {
                     xai_grok_tools::reminders::task_completion::DEFAULT_TASK_OUTPUT_TOOL.to_string()
                 }),
+            scheduler_delete_tool_name: parent_handle
+                .as_ref()
+                .and_then(|h| h.tool_context.scheduler_delete_tool_name.clone()),
             auto_wake_enabled: self
                 .cfg
                 .borrow()

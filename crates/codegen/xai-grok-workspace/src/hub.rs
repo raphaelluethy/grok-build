@@ -395,6 +395,7 @@ impl HubHandle {
 pub(crate) struct SessionRoutedToolHandler {
     tool_id: ToolId,
     desc: ToolDescription,
+    semantic_kind: Option<xai_grok_tools::types::tool::ToolKind>,
     schema: Option<Value>,
     workspace: WorkspaceHandle,
 }
@@ -402,18 +403,23 @@ impl SessionRoutedToolHandler {
     pub(crate) fn new(
         name: String,
         desc: ToolDescription,
+        semantic_kind: Option<xai_grok_tools::types::tool::ToolKind>,
         schema: Option<Value>,
         workspace: WorkspaceHandle,
     ) -> Result<Self, xai_tool_protocol::IdError> {
         Ok(Self {
             tool_id: ToolId::new(name)?,
             desc,
+            semantic_kind,
             schema,
             workspace,
         })
     }
     fn name(&self) -> &str {
         self.tool_id.as_str()
+    }
+    pub(crate) fn permission_access(&self, args: &Value) -> Option<crate::permission::AccessKind> {
+        crate::permission::access_kind_for_hub_tool(self.semantic_kind, self.name(), args)
     }
 }
 /// RAII guard that brackets a tool call's activity-tracker accounting.
@@ -499,7 +505,7 @@ impl ToolServerHandler for SessionRoutedToolHandler {
         let call_id = ctx.call_id.to_string();
         if crate::permission::hitl_permission_live_enabled()
             && !session.yolo_mode()
-            && let Some(access) = crate::permission::access_kind_for_hub_tool(self.name(), &args)
+            && let Some(access) = self.permission_access(&args)
         {
             let transport = self
                 .workspace
@@ -513,7 +519,7 @@ impl ToolServerHandler for SessionRoutedToolHandler {
             match transport {
                 Some(transport) => {
                     let outcome = crate::permission::request_permission_via_hub(
-                        &transport, &access, &call_id,
+                        &transport, &access, &call_id, None,
                     )
                     .await;
                     if !crate::permission::prompt_outcome_allows(&outcome) {
@@ -570,13 +576,10 @@ impl ToolServerHandler for SessionRoutedToolHandler {
         let guard = CallCompletedGuard::new(tracker, call_id, Some(session_label.clone()));
         Box::pin(async_stream::stream! {
             use futures::StreamExt;
-            // Move the guard into the stream so completion accounting spans the
-            // full stream lifetime (and fires on drop if never consumed).
             let mut _guard = guard;
             let mut inner = inner;
             while let Some(item) = inner.next().await {
                 match item {
-                    // Rollout gate lives downstream in the sampler.
                     ToolStreamItem::Progress(p) => {
                         let p = match &virt {
                             Some(v) => v.rewrite_progress(p),
@@ -585,7 +588,6 @@ impl ToolServerHandler for SessionRoutedToolHandler {
                         yield ToolStreamItem::Progress(p);
                     }
                     ToolStreamItem::Terminal(Ok(run_result)) => {
-                        // Background-task accounting lives in the activity feed, not here.
                         _guard.set_outcome(xai_grok_session_events::ToolOutcome::Success);
                         let output = run_result.into_typed_tool_output(tool_id);
                         let output = match &virt {
@@ -608,20 +610,11 @@ impl ToolServerHandler for SessionRoutedToolHandler {
                             Some(v) => v.rewrite_error(e),
                             None => e,
                         };
-                        // Forward the inner ToolError (after path rewrite) so
-                        // the harness and dashboards keep its kind + structured
-                        // details (e.g. invalid-argument vs crashed subprocess).
                         yield ToolStreamItem::Terminal(Err(e));
                         return;
                     }
                 }
             }
-            // Defensive fallback: every terminal arm above `return`s, so this is
-            // only reached if the inner `call_streaming` stream ended without a
-            // terminal. That is unreachable under the `call_streaming` contract
-            // (it yields exactly one terminal on every code path), but we emit a
-            // terminal here anyway so the "exactly one Terminal" invariant is
-            // enforced locally rather than merely inherited from the inner layer.
             yield ToolStreamItem::Terminal(Err(ToolError::new(
                 ToolErrorKind::TerminalError,
                 "tool stream ended without a terminal",
@@ -759,6 +752,7 @@ mod tests {
             tool_name.to_owned(),
             ToolDescription::new(tool_name.to_owned(), String::new()),
             None,
+            None,
             workspace.clone(),
         )
         .expect("test tool name is a valid ToolId")
@@ -770,12 +764,52 @@ mod tests {
             "not a tool id!".to_owned(),
             ToolDescription::new("not a tool id!".to_owned(), String::new()),
             None,
+            None,
             handle.clone(),
         );
         assert!(
             err.is_err(),
             "invalid name must be rejected at construction"
         );
+    }
+    #[tokio::test]
+    async fn renamed_active_message_handler_keeps_semantic_hitl_classification() {
+        let handle = crate::handle::tests::make_handle();
+        let mut config = xai_grok_tools::registry::types::ToolConfig::for_tool::<
+            xai_grok_tools::implementations::grok_build::SendSubagentMessageTool,
+        >();
+        config.name_override = Some("relay_to_subagent".to_owned());
+        assert_eq!(
+            config.kind,
+            Some(xai_grok_tools::types::tool::ToolKind::ActiveAgentMessage)
+        );
+        let model_name = config.name_override.clone().expect("name override");
+        let desc = ToolDescription::new(model_name.clone(), "relay");
+        let handler = SessionRoutedToolHandler::new(
+            model_name,
+            desc,
+            Some(ToolKind::ActiveAgentMessage),
+            None,
+            handle,
+        )
+        .expect("renamed handler");
+        let args = serde_json::json!({
+            "subagent_id": "sub-1",
+            "text": "private follow-up",
+        });
+        let access = handler
+            .permission_access(&args)
+            .expect("renamed semantic handler must remain guarded");
+        let crate::permission::AccessKind::AgentMessage { subagent_id } = &access else {
+            panic!("renamed semantic handler must use agent-message access")
+        };
+        assert_eq!(subagent_id, "sub-1");
+        assert!(!subagent_id.contains("private follow-up"));
+        let payload = crate::permission::build_permission_payload_for_test(&access, "tc");
+        assert_eq!(payload["tool_name"], "send_subagent_message");
+        assert_eq!(payload["subagent_id"], "sub-1");
+        assert!(payload.get("text").is_none());
+        assert!(payload.get("edit_file_paths").is_none());
     }
     #[tokio::test]
     async fn handler_tool_id_round_trips_the_validated_name() {
