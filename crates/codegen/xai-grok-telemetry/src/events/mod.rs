@@ -10,7 +10,9 @@ use serde::Serialize;
 use super::enums::PermissionMode;
 pub use super::enums::PrCreationSource;
 
+mod active_agent_message;
 mod permission_analytics;
+pub use active_agent_message::*;
 pub use permission_analytics::*;
 
 /// Binds a product event name to a struct. Implement via `telemetry_event!` below.
@@ -96,6 +98,7 @@ pub enum YoloTrigger {
 
 #[derive(Serialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AccessKind {
     Read,
     Edit,
@@ -103,6 +106,8 @@ pub enum AccessKind {
     Grep,
     Mcp,
     Web,
+    AgentMessage,
+    Other,
 }
 
 /// Outcome of one CLI binary install/update attempt.
@@ -1102,6 +1107,19 @@ pub struct HookExecuted {
 #[derive(Serialize)]
 pub struct HookBlocked {
     pub hook_name: String,
+    pub cause: HookBlockCause,
+}
+
+#[derive(Serialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum HookBlockCause {
+    Denied,
+    /// A `PreToolUse` `updatedInput` that could not be applied.
+    UnusableRewrite,
+    /// A `Stop`/`SubagentStop` hook blocked the agent from stopping.
+    StopBlocked,
+    /// A `UserPromptSubmit` hook blocked the prompt before the turn started.
+    PromptBlocked,
 }
 
 /// Per-callback outcome of a `PreToolUse` gate. A deny returns early, so callbacks
@@ -1514,6 +1532,9 @@ pub struct ActionStationarityStop {
 pub struct ToolCallCompleted {
     pub tool_name: String,
     pub outcome: xai_grok_session_events::types::ToolOutcome,
+    /// Content-free: the hook name is kept out of OTLP and product events and
+    /// rides only the session-event row.
+    pub hook_rewrote: bool,
     pub duration_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_result_size_bytes: Option<u64>,
@@ -1583,6 +1604,28 @@ pub struct SessionEnded {
     pub tool_call_count: u64,
     pub compaction_count: u64,
     pub model_id: String,
+}
+
+/// Per-session teardown phase durations. Emitted once after feedback so late
+/// phases are not dropped: `SessionEnded` fires mid-teardown.
+#[derive(Serialize, Default)]
+pub struct SessionEndTimings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_save_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_consolidate_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hooks_dispatch_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hooks_stop_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflows_drain_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflows_persist_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feedback_drain_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background_tasks_save_ms: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -2395,6 +2438,12 @@ telemetry_event!(
 );
 telemetry_event!(SubagentLimitHit, "subagent_limit_hit");
 telemetry_event!(SubagentRateLimitWaited, "subagent_rate_limit_waited");
+telemetry_event!(
+    ActiveAgentMessageCompleted,
+    "active_agent_message_completed"
+);
+telemetry_event!(ActiveAgentMessageLimitHit, "active_agent_message_limit_hit");
+telemetry_event!(ActiveAgentMessageSettled, "active_agent_message_settled");
 telemetry_event!(WorkflowRunStarted, "workflow_run_started");
 telemetry_event!(WorkflowRunEnded, "workflow_run_ended");
 telemetry_event!(
@@ -2502,6 +2551,7 @@ telemetry_event!(
     "session_ended",
     external = crate::external::schema::map_session_end
 );
+telemetry_event!(SessionEndTimings, "session_end_timings");
 telemetry_event!(
     AgentConnect,
     "agent_connect",
@@ -2567,10 +2617,18 @@ telemetry_event!(ExternalOtelExportHealth, "external_otel_export_health");
 
 // Session lifecycle (structs in session_metrics)
 telemetry_event!(crate::session_metrics::SessionStarted, "session_started");
+telemetry_event!(
+    crate::session_metrics::SessionContextSnapshot,
+    "session_context_snapshot"
+);
 telemetry_event!(crate::session_metrics::Turn, "turn");
 telemetry_event!(
     crate::session_metrics::TurnCompletedLifecycle,
     "turn_completed_lifecycle"
+);
+telemetry_event!(
+    crate::session_metrics::DoomLoopDetected,
+    "doom_loop_detected"
 );
 telemetry_event!(
     crate::session_metrics::DoomLoopRecovery,
@@ -2628,6 +2686,7 @@ mod tests {
     fn event_fields_shadow_reserved_keys_only_on_the_allowlist() {
         const SOURCES: &[&str] = &[
             include_str!("mod.rs"),
+            include_str!("active_agent_message.rs"),
             include_str!("permission_analytics.rs"),
             include_str!("../session_metrics.rs"),
             include_str!("../memory_telemetry.rs"),
@@ -2707,6 +2766,8 @@ mod tests {
         );
 
         const ALLOWED: &[(&str, &str)] = &[
+            ("DoomLoopDetected", "session_id"),
+            ("DoomLoopDetected", "turn_number"),
             ("DoomLoopRecovery", "session_id"),
             ("DoomLoopRecovery", "turn_number"),
             ("MemoryFlushComplete", "session_id"),
@@ -2725,6 +2786,7 @@ mod tests {
             ("SessionHarness", "session_id"),
             ("SessionLoad", "session_id"),
             ("SessionNew", "session_id"),
+            ("SessionContextSnapshot", "session_id"),
             ("SessionStarted", "session_id"),
             ("TraceUploadAttempted", "session_id"),
             ("TraceUploadAttempted", "turn_number"),
@@ -2837,6 +2899,7 @@ mod tests {
             serde_json::to_value(ToolCallCompleted {
                 tool_name: "bash".into(),
                 outcome: xai_grok_session_events::types::ToolOutcome::Success,
+                hook_rewrote: false,
                 duration_ms: 7,
                 tool_result_size_bytes: Some(2_048),
                 file_path: None,
@@ -2846,6 +2909,7 @@ mod tests {
             serde_json::json!({
                 "tool_name": "bash",
                 "outcome": "success",
+                "hook_rewrote": false,
                 "duration_ms": 7,
                 "tool_result_size_bytes": 2_048,
             })
@@ -2854,6 +2918,7 @@ mod tests {
             serde_json::to_value(ToolCallCompleted {
                 tool_name: "bash".into(),
                 outcome: xai_grok_session_events::types::ToolOutcome::Success,
+                hook_rewrote: false,
                 duration_ms: 7,
                 tool_result_size_bytes: None,
                 file_path: None,
@@ -2863,6 +2928,7 @@ mod tests {
             serde_json::json!({
                 "tool_name": "bash",
                 "outcome": "success",
+                "hook_rewrote": false,
                 "duration_ms": 7,
             })
         );

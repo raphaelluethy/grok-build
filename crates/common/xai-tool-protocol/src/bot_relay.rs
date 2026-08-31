@@ -8,6 +8,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use typeshare::typeshare;
 
 use crate::{JsonRpcError, Method};
 
@@ -28,22 +29,65 @@ pub const BOT_RELAY_CAPABILITIES: &[&str] = &[
 /// `bot.event` envelope version carried in [`BotEventEnvelope::v`].
 pub const BOT_EVENT_ENVELOPE_V: u32 = 1;
 
-/// Machine-readable `reason` on [`BotRelayErrorCode::CommandRejected`] when
-/// the command is compiled in but not on the current allowlist.
+/// `reason` on `command_rejected` when the command is compiled in but not allowlisted.
 pub const COMMAND_REJECTED_NOT_YET_ENABLED: &str = "not_yet_enabled";
+
+/// `reason` on `command_rejected` when envelope `agentId` and `args.agentId` disagree.
+pub const COMMAND_REJECTED_AGENT_ID_MISMATCH: &str = "agent_id_mismatch";
+
+/// `reason` on `command_rejected` when `uploadAttachment` args JSON exceeds 3 MiB.
+pub const COMMAND_REJECTED_ARGS_TOO_LARGE: &str = "args_too_large";
+
+/// `reason` on `command_rejected` when required command args are missing or empty.
+pub const COMMAND_REJECTED_ARGS_INVALID: &str = "args_invalid";
+
+/// `reason` on `command_rejected` when Live mode cannot accept attachments.
+pub const COMMAND_REJECTED_ATTACHMENTS_NOT_SUPPORTED_IN_LIVE: &str =
+    "attachments_not_supported_in_live";
+
+/// `reason` on `command_rejected` when Live mode cannot interrupt or look up
+/// prompt acceptance (no Temporal interrupt RPC; on-box ledger is never written).
+pub const COMMAND_REJECTED_NOT_SUPPORTED_IN_LIVE: &str = "not_supported_in_live";
+
+/// `reason` on `command_rejected` when attachUpload cannot see the file (missing or not the caller's).
+pub const COMMAND_REJECTED_ATTACHMENT_NOT_FOUND: &str = "attachment_not_found";
+
+/// `reason` on `command_rejected` when the file exists but is not a BOT_CHAT upload.
+pub const COMMAND_REJECTED_ATTACHMENT_WRONG_SOURCE: &str = "attachment_wrong_source";
+
+/// `reason` on `command_rejected` when the stored BotChat object exceeds 25 MiB.
+pub const COMMAND_REJECTED_ATTACHMENT_TOO_LARGE: &str = "attachment_too_large";
+
+/// `reason` on `command_rejected` when the BotChat upload is not PostProcessDone.
+pub const COMMAND_REJECTED_ATTACHMENT_NOT_READY: &str = "attachment_not_ready";
+
+/// `reason` on `command_rejected` when the box refused a well-formed
+/// catalog method (capability skew, not a client catalog bug).
+pub const COMMAND_REJECTED_GATEWAY_UNKNOWN_METHOD: &str = "gateway/unknown-method";
+
+/// True only when the hub classified a box unknown-method refusal.
+/// False for `unknown_method` (catalog-miss), `not_yet_enabled`,
+/// `host_only`, and every non-`command_rejected` code.
+pub fn is_gateway_method_unsupported(err: &BotRelayError) -> bool {
+    err.code == BotRelayErrorCode::CommandRejected
+        && err.reason.as_deref() == Some(COMMAND_REJECTED_GATEWAY_UNKNOWN_METHOD)
+}
 
 // ── Shared empty payloads ────────────────────────────────────────────────
 
 /// Empty JSON object (`{}`). Used by verbs whose design params/result are `{}`.
+#[typeshare]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BotEmptyParams {}
 
 /// Empty JSON object (`{}`). Alias of [`BotEmptyParams`].
+#[typeshare]
 pub type BotEmptyResult = BotEmptyParams;
 
 // ── bot.command ──────────────────────────────────────────────────────────
 
 /// `bot.command` params. `name` and `args` are upstream-verbatim.
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotCommandParams {
@@ -53,11 +97,13 @@ pub struct BotCommandParams {
 }
 
 /// Upstream-verbatim command result. Not interpreted by this crate.
+#[typeshare]
 pub type BotCommandResult = serde_json::Value;
 
 // ── bot.vncDescriptor ────────────────────────────────────────────────────
 
 /// `bot.vncDescriptor` params.
+#[typeshare]
 pub type BotVncDescriptorParams = BotEmptyParams;
 
 /// `bot.vncDescriptor` result.
@@ -65,6 +111,7 @@ pub type BotVncDescriptorParams = BotEmptyParams;
 /// `expires_hint` is unix milliseconds. `null` means a legacy network-token
 /// URL (valid until pod migration); a concrete value is the port-token
 /// expiry the client should refresh before.
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotVncDescriptorResult {
@@ -72,15 +119,18 @@ pub struct BotVncDescriptorResult {
     /// Unix time in milliseconds, or `null` when the URL has no expiry.
     /// Present as `null` on the wire when unset; omitted keys also read as `None`.
     #[serde(default)]
+    #[typeshare(serialized_as = "Option<NullableMillis>")]
     pub expires_hint: Option<i64>,
 }
 
 // ── bot.roster ───────────────────────────────────────────────────────────
 
 /// `bot.roster` params. Cold — never wakes the box.
+#[typeshare]
 pub type BotRosterParams = BotEmptyParams;
 
 /// One cached roster row.
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotRosterEntry {
@@ -89,10 +139,12 @@ pub struct BotRosterEntry {
     pub status: String,
     /// Unix time in milliseconds of the agent's last turn, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[typeshare(serialized_as = "Option<I54>")]
     pub last_turn_at: Option<i64>,
 }
 
 /// `bot.roster` result.
+#[typeshare]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BotRosterResult {
     pub agents: Vec<BotRosterEntry>,
@@ -101,10 +153,12 @@ pub struct BotRosterResult {
 // ── bot.status ───────────────────────────────────────────────────────────
 
 /// `bot.status` params. Cold — never wakes the box.
+#[typeshare]
 pub type BotStatusParams = BotEmptyParams;
 
 /// Off-box run state. Senders emit only the named variants. Receivers
 /// treat any unknown wire string as [`Self::Unknown`].
+#[typeshare]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BotRunState {
@@ -151,15 +205,21 @@ impl<'de> Deserialize<'de> for BotRunState {
 }
 
 /// `bot.status` result: off-box run state.
+///
+/// `runState` is a string on the wire. Generated clients see `string` and
+/// compare against [`BotRunState`]. Unknown values degrade to `unknown`.
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotStatusResult {
+    #[typeshare(serialized_as = "String")]
     pub run_state: BotRunState,
 }
 
 // ── bot.transcript.offbox ────────────────────────────────────────────────
 
 /// `bot.transcript.offbox` params. Cold — never wakes the box.
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotTranscriptOffboxParams {
@@ -169,6 +229,7 @@ pub struct BotTranscriptOffboxParams {
 }
 
 /// `bot.transcript.offbox` result. `entries` is the upstream page, verbatim.
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotTranscriptOffboxResult {
@@ -180,25 +241,33 @@ pub struct BotTranscriptOffboxResult {
 // ── bot.subscribe / bot.unsubscribe ──────────────────────────────────────
 
 /// `bot.subscribe` / `bot.unsubscribe` params.
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotSubscribeParams {
     pub agent_ids: Vec<String>,
+    /// Opt in to full-fidelity SSE payloads (inline avatars). Default slim.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub full_fidelity: bool,
 }
 
 /// `bot.unsubscribe` params — same shape as [`BotSubscribeParams`].
+#[typeshare]
 pub type BotUnsubscribeParams = BotSubscribeParams;
 
 /// `bot.subscribe` result.
+#[typeshare]
 pub type BotSubscribeResult = BotEmptyResult;
 
 /// `bot.unsubscribe` result.
+#[typeshare]
 pub type BotUnsubscribeResult = BotEmptyResult;
 
 // ── bot.bindConversation ─────────────────────────────────────────────────
 
 /// `bot.bindConversation` params. Binding is an index only; the hub never
 /// infers a command target from `conversationId`.
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotBindConversationParams {
@@ -208,14 +277,16 @@ pub struct BotBindConversationParams {
 }
 
 /// `bot.bindConversation` result.
+#[typeshare]
 pub type BotBindConversationResult = BotEmptyResult;
 
 // ── Closed error enum ────────────────────────────────────────────────────
 
 /// Closed hub-owned error code. This list is the client stability boundary.
 ///
-/// Senders emit only these codes. Receivers treat any unknown code as
-/// [`Self::UpstreamError`] (see [`Self::from_wire`]).
+/// Senders emit only these codes. Receivers treat any unknown wire string
+/// as `upstream_error` and keep `retryable` / `detail`.
+#[typeshare]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BotRelayErrorCode {
@@ -319,6 +390,7 @@ impl<'de> Deserialize<'de> for BotRelayErrorCode {
 
 /// Opaque upstream diagnostic. Present for debugging only; clients must
 /// not parse `upstream`.
+#[typeshare]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BotRelayErrorDetail {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -328,15 +400,21 @@ pub struct BotRelayErrorDetail {
 /// Hub-owned bot-relay error object.
 ///
 /// Wire form: `{code, retryable, detail, reason?}`.
+/// `detail` is always present (empty object when unused).
 /// `reason` is set only for [`BotRelayErrorCode::CommandRejected`].
 ///
-/// On the JSON-RPC envelope this object is `error.data`. The numeric
-/// `error.code` is the closest existing [`crate::ERROR_CODES`] entry
-/// (see [`BotRelayErrorCode::jsonrpc_numeric`]); `error.message` is the
-/// snake_case [`BotRelayErrorCode`]. Receivers switch on `data.code`.
+/// On the JSON-RPC envelope this object is `error.data`. Receivers
+/// switch on `data.code`. The envelope `error.message` is the snake_case
+/// [`BotRelayErrorCode`].
+///
+/// `code` is a string on the wire. Generated clients see `string` and
+/// compare against [`BotRelayErrorCode`]. Unknown values degrade to
+/// `upstream_error` while preserving `retryable` and `detail`.
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotRelayError {
+    #[typeshare(serialized_as = "String")]
     pub code: BotRelayErrorCode,
     pub retryable: bool,
     #[serde(default)]
@@ -366,10 +444,13 @@ impl From<BotRelayError> for JsonRpcError {
 // ── Event channel ────────────────────────────────────────────────────────
 
 /// Enumerated hub-owned event channel. Prefixed `hub:` so the set is
-/// structurally disjoint from any upstream `SandGatewayEventChannel`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// structurally disjoint from any unprefixed upstream channel name.
+#[typeshare]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub enum HubChannel {
+    #[serde(rename = "hub:turn_finished")]
     TurnFinished,
+    #[serde(rename = "hub:resync_required")]
     ResyncRequired,
 }
 
@@ -495,6 +576,7 @@ impl<'de> Deserialize<'de> for BotEventChannel {
 // ── Hub-owned event bodies ───────────────────────────────────────────────
 
 /// Body of `hub:turn_finished` (`event` when [`HubChannel::TurnFinished`]).
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HubTurnFinishedEvent {
@@ -504,6 +586,7 @@ pub struct HubTurnFinishedEvent {
 }
 
 /// Body of `hub:resync_required` (`event` when [`HubChannel::ResyncRequired`]).
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HubResyncRequiredEvent {
@@ -526,12 +609,20 @@ pub struct HubResyncRequiredEvent {
 /// `event` is upstream-verbatim for [`BotEventChannel::Upstream`]. For
 /// [`HubChannel::TurnFinished`] it is [`HubTurnFinishedEvent`]; for
 /// [`HubChannel::ResyncRequired`] it is [`HubResyncRequiredEvent`].
+///
+/// `channel` is a string on the wire. Typeshare cannot express the
+/// hub / hub-unknown / upstream split, so generated clients see `string`.
+/// Compare against [`HubChannel`] for the known `hub:*` values.
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotEventEnvelope {
     pub v: u32,
     pub agent_id: String,
+    // typeshare panics on bare 64-bit ints; `I54` is a JS-safe number.
+    #[typeshare(serialized_as = "I54")]
     pub seq: u64,
+    #[typeshare(serialized_as = "String")]
     pub channel: BotEventChannel,
     pub event: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -611,12 +702,12 @@ mod tests {
         let params = BotCommandParams {
             agent_id: "agt_...".to_owned(),
             name: "sendPrompt".to_owned(),
-            args: json!({"text": "hello"}),
+            args: json!({"prompt": "hello"}),
         };
         let wire = json!({
             "agentId": "agt_...",
             "name": "sendPrompt",
-            "args": {"text": "hello"},
+            "args": {"prompt": "hello"},
         });
         assert_eq!(roundtrip(&params), wire);
         let parsed: BotCommandParams = serde_json::from_value(wire).unwrap();
@@ -624,7 +715,7 @@ mod tests {
         assert_rejects::<BotCommandParams>(json!({
             "agent_id": "agt_...",
             "name": "sendPrompt",
-            "args": {"text": "hello"},
+            "args": {"prompt": "hello"},
         }));
     }
 
@@ -827,10 +918,14 @@ mod tests {
     fn subscribe_and_bind() {
         let sub = BotSubscribeParams {
             agent_ids: vec!["agt_a".to_owned(), "agt_b".to_owned()],
+            full_fidelity: false,
         };
         assert_eq!(roundtrip(&sub), json!({"agentIds": ["agt_a", "agt_b"]}));
 
-        let empty = BotSubscribeParams { agent_ids: vec![] };
+        let empty = BotSubscribeParams {
+            agent_ids: vec![],
+            full_fidelity: false,
+        };
         let empty_wire = json!({"agentIds": []});
         assert_eq!(roundtrip(&empty), empty_wire);
         let parsed: BotSubscribeParams = serde_json::from_value(empty_wire).unwrap();
@@ -970,11 +1065,46 @@ mod tests {
     }
 
     #[test]
+    fn helper_true_only_for_gateway_unknown_method() {
+        let skew = BotRelayError {
+            code: BotRelayErrorCode::CommandRejected,
+            retryable: false,
+            detail: BotRelayErrorDetail::default(),
+            reason: Some(COMMAND_REJECTED_GATEWAY_UNKNOWN_METHOD.to_owned()),
+        };
+        assert!(is_gateway_method_unsupported(&skew));
+
+        let catalog_miss = BotRelayError {
+            code: BotRelayErrorCode::CommandRejected,
+            retryable: false,
+            detail: BotRelayErrorDetail::default(),
+            reason: Some("unknown_method".to_owned()),
+        };
+        assert!(!is_gateway_method_unsupported(&catalog_miss));
+
+        let gated = BotRelayError {
+            code: BotRelayErrorCode::CommandRejected,
+            retryable: false,
+            detail: BotRelayErrorDetail::default(),
+            reason: Some(COMMAND_REJECTED_NOT_YET_ENABLED.to_owned()),
+        };
+        assert!(!is_gateway_method_unsupported(&gated));
+
+        let upstream = BotRelayError {
+            code: BotRelayErrorCode::UpstreamError,
+            retryable: false,
+            detail: BotRelayErrorDetail::default(),
+            reason: Some(COMMAND_REJECTED_GATEWAY_UNKNOWN_METHOD.to_owned()),
+        };
+        assert!(!is_gateway_method_unsupported(&upstream));
+    }
+
+    #[test]
     fn unknown_error_code_preserves_fields_and_reserializes_as_upstream_error() {
         let parsed: BotRelayError = serde_json::from_value(json!({
             "code": "some_future_code",
             "retryable": true,
-            "detail": {"upstream": "cursor says nope"},
+            "detail": {"upstream": "upstream rejected the request"},
             "loginUrl": "https://example.invalid/unused",
             "reason": "future_reason",
         }))
@@ -985,7 +1115,7 @@ mod tests {
             json!({
                 "code": "upstream_error",
                 "retryable": true,
-                "detail": {"upstream": "cursor says nope"},
+                "detail": {"upstream": "upstream rejected the request"},
                 "reason": "future_reason",
             })
         );

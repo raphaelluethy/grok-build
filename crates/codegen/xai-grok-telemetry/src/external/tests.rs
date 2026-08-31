@@ -122,6 +122,7 @@ fn external_allowed_keys_are_pinned() {
         "status_code",
         "tool_name",
         "success",
+        "hook_rewrote",
         "file_extension",
         "tool_parameters",
         "file_path",
@@ -275,6 +276,10 @@ fn tool_name_sanitization() {
     assert_eq!(schema::sanitize_tool_name("read_file"), "read_file");
     assert_eq!(schema::sanitize_tool_name("memory_search"), "memory_search");
     assert_eq!(schema::sanitize_tool_name("memory_get"), "memory_get");
+    assert_eq!(
+        schema::sanitize_tool_name("send_subagent_message"),
+        "send_subagent_message"
+    );
     assert_eq!(
         schema::sanitize_tool_name("nebula__post_message"),
         "mcp_tool"
@@ -546,6 +551,28 @@ fn turn_error_increments_error_count() {
 }
 
 #[test]
+fn tool_result_hook_rewrote_is_content_free() {
+    use xai_grok_session_events::types::ToolOutcome;
+    for (hook_rewrote, want) in [(true, "true"), (false, "false")] {
+        let stream = build(gates_off());
+        emit_event_into(
+            &stream,
+            &events::ToolCallCompleted {
+                tool_name: "run_terminal_cmd".into(),
+                outcome: ToolOutcome::Success,
+                hook_rewrote,
+                duration_ms: 5,
+                tool_result_size_bytes: None,
+                file_path: None,
+                parameters: None,
+            },
+        );
+        let events = exported_events(&stream);
+        assert_eq!(attr(&events[0], "hook_rewrote").as_deref(), Some(want));
+    }
+}
+
+#[test]
 fn tool_result_gates_off_collapses_and_reduces() {
     let stream = build(gates_off());
     emit_event_into(
@@ -553,6 +580,7 @@ fn tool_result_gates_off_collapses_and_reduces() {
         &events::ToolCallCompleted {
             tool_name: "nebula__post_message".into(),
             outcome: xai_grok_session_events::types::ToolOutcome::Success,
+            hook_rewrote: false,
             duration_ms: 42,
             tool_result_size_bytes: None,
             file_path: Some("/Users/alice/secret-project/main.rs".into()),
@@ -583,7 +611,7 @@ fn tool_result_details_gate_exposes_verbatim_scrubbed() {
     let stream = build(gates_all_on());
     // Use the *real* home dir: `redact_user_paths` collapses the current
     // user's home (env-derived), not arbitrary foreign paths.
-    let home = dirs::home_dir()
+    let home = xai_dirs::home_dir()
         .map(|h| h.to_string_lossy().into_owned())
         .unwrap_or_else(|| "/home/testuser".into());
     let path = format!("{home}/proj/main.rs");
@@ -592,6 +620,7 @@ fn tool_result_details_gate_exposes_verbatim_scrubbed() {
         &events::ToolCallCompleted {
             tool_name: "nebula__post_message".into(),
             outcome: xai_grok_session_events::types::ToolOutcome::Success,
+            hook_rewrote: false,
             duration_ms: 42,
             tool_result_size_bytes: None,
             file_path: Some(path.clone()),
@@ -719,6 +748,42 @@ fn mcp_connection_collapses_server_name_by_default() {
     assert_eq!(attr(ev, "mcp_server.name").as_deref(), Some("mcp_server"));
     assert_eq!(attr(ev, "error_type").as_deref(), Some("timeout"));
     assert!(!format!("{events:?}").contains("corp-internal-jira"));
+}
+
+#[test]
+fn agent_message_tool_decision_identity() {
+    let stream = build(gates_off());
+    emit_event_into(
+        &stream,
+        &events::PermissionDecisionPayload {
+            tool_name: "send_subagent_message".into(),
+            access_kind: events::AccessKind::AgentMessage,
+            decision: events::PermissionOutcome::Allow,
+            wait_ms: 10,
+            permission_mode: crate::enums::PermissionMode::Ask,
+            source: Some("allowed".into()),
+            subagent_session_id: None,
+            subagent_type: None,
+            manager_prompt_attempted: Some(true),
+            prompt_outcome: Some(events::PermissionPromptOutcome::Allow),
+            prompt_outcome_detail: Some(events::PermissionPromptOutcomeDetail::AllowOnce),
+            remember_tool_approvals: Some(true),
+            decision_reason: Some(events::PermissionDecisionReason::NeedsUser),
+            classifier_source: None,
+            classifier_verdict: None,
+            security_findings: None,
+            classifier_latency_ms: None,
+            auto_denials_consecutive: None,
+            auto_denials_total: None,
+        },
+    );
+    let events = exported_events(&stream);
+    let ev = &events[0];
+    assert_eq!(
+        attr(ev, "tool_name").as_deref(),
+        Some("send_subagent_message")
+    );
+    assert_eq!(attr(ev, "access_kind").as_deref(), Some("agent_message"));
 }
 
 #[test]
