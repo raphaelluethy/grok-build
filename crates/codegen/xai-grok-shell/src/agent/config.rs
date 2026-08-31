@@ -921,7 +921,7 @@ impl PluginsConfig {
             return;
         }
         let mut paths = Vec::new();
-        if let Some(home) = dirs::home_dir() {
+        if let Some(home) = xai_dirs::home_dir() {
             paths.push(home.join(".claude").join("settings.json"));
         }
         for path in &paths {
@@ -1057,7 +1057,7 @@ pub struct ModelsConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_description: Option<String>,
     /// Model pin for next-prompt suggestions (tab-autocomplete ghost text).
-    /// Unset = remote pin, then the client hint / built-in `grok-build-0.1`
+    /// Unset = remote pin, then the client hint / built-in `grok-4.6`
     /// default with the catalog guard; see `ModelOverrideConfig::resolve`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_suggestion: Option<String>,
@@ -1146,6 +1146,9 @@ impl HubConfig {
         self.url.as_ref().is_some_and(|u| !u.trim().is_empty())
     }
 }
+/// Deprecated `[worktree_pool]` section. The pre-warmed worktree pool was
+/// deleted (never wired into production); the section is still parsed so
+/// existing user configs don't trip unknown-key warnings.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorktreePoolConfig {
@@ -1584,7 +1587,7 @@ pub struct Config {
     /// (`default_session_summary_model`) when unset; see `ModelOverrideConfig::resolve`.
     #[serde(skip)]
     pub session_summary_model: Option<String>,
-    /// Image describe model (`grok-build` default via `ModelOverrideConfig::resolve`).
+    /// Image describe model (`grok-4.6` default via `ModelOverrideConfig::resolve`).
     #[serde(skip)]
     pub image_description_model: Option<String>,
     /// Next-prompt suggestion model pin (`env > [models] prompt_suggestion >
@@ -3101,6 +3104,24 @@ pub(crate) fn resolve_mcp_auto_restart(
     feature_flag: Option<bool>,
 ) -> Resolved<bool> {
     BoolFlag::env("GROK_MCP_AUTO_RESTART")
+        .requirement(requirement)
+        .cli(cli)
+        .config(config)
+        .managed(managed)
+        .feature_flag(feature_flag)
+        .default(true)
+        .resolve()
+}
+/// Kill switch for the transient turn-resubmit arm. Standard `BoolFlag`
+/// precedence; env `GROK_TURN_TRANSIENT_RETRY`; default on.
+pub(crate) fn resolve_turn_transient_retry(
+    requirement: Option<bool>,
+    cli: Option<bool>,
+    config: Option<bool>,
+    managed: Option<bool>,
+    feature_flag: Option<bool>,
+) -> Resolved<bool> {
+    BoolFlag::env("GROK_TURN_TRANSIENT_RETRY")
         .requirement(requirement)
         .cli(cli)
         .config(config)
@@ -4718,6 +4739,10 @@ pub struct Features {
     /// does not report it as an unrecognized key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_auto_restart: Option<bool>,
+    /// Transient turn-retry kill switch (`None` = on). The resolver reads
+    /// raw TOML; declared only so `serde_ignored` allows the key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_transient_retry: Option<bool>,
     /// Pager-side subscription to the `x.ai/mcp/server_status` push.
     ///
     /// When `true` (default), the pager subscribes to the per-server
@@ -4878,7 +4903,12 @@ pub(crate) fn resolve_credentials(
             info.base_url.clone(),
             xai_chat_state::AuthType::ApiKey,
         )
-    } else if let Some(key) = session_key {
+    } else if let Some(key) = session_key
+        && crate::auth::backend::AuthBackend::may_receive_session(
+            &crate::auth::backend::ActiveAuthBackend::default(),
+            &info.base_url,
+        )
+    {
         (
             Some(key.to_owned()),
             info.base_url.clone(),

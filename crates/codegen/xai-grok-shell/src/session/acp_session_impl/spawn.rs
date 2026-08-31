@@ -9,6 +9,9 @@
 #![allow(clippy::items_after_test_module)]
 use super::*;
 use crate::remote::DEFAULT_CONTEXT_WINDOW;
+use xai_grok_telemetry::region;
+use xai_grok_telemetry::region::Parent as SpanParent;
+use xai_grok_telemetry::subagent_spawn::phase_region_under;
 /// Partition CLI `--allow` rules under the pin: blanket catch-all allows
 /// (`Allow(Any)` `*` / `**`, plus bare/match-all Bash/MCP/WebFetch grants — see
 /// `resolution::is_catchall_allow`) substitute for the blocked `--yolo`, so drop them when
@@ -259,6 +262,7 @@ pub(crate) async fn spawn_session_actor(
     video_gen_config: xai_grok_tools::implementations::grok_build::video_gen::VideoGenConfig,
     app_builder_deployer_config: xai_grok_tools::implementations::grok_build::app_builder::AppBuilderDeployerConfig,
     write_file_enabled: bool,
+    active_agent_messages_enabled: bool,
     goal_enabled: bool,
     background_workflows_enabled: bool,
     subagents_enabled: bool,
@@ -299,7 +303,7 @@ pub(crate) async fn spawn_session_actor(
     max_turns: Option<usize>,
     forked_tool_override: Option<Vec<ToolSpec>>,
     is_chat_kind: bool,
-    spawn_timer: Option<xai_grok_telemetry::subagent_spawn::SharedSubagentSpawnTimer>,
+    spawn_ctx: Option<xai_grok_telemetry::subagent_spawn::SpawnPhaseContext>,
     sampling_gate: Option<Arc<tokio::sync::Semaphore>>,
 ) -> Result<
     (
@@ -374,6 +378,11 @@ pub(crate) async fn spawn_session_actor(
                 }
             }
         }
+        xai_grok_workspace::permission::resolution::apply_permission_mode_hint(
+            &mut permission_config,
+            startup_hints.permission_mode.as_deref(),
+            yolo_pin,
+        );
         let deny_read_globs = permission_config
             .as_ref()
             .map(xai_grok_workspace::permission::resolution::deny_read_globs_from_config)
@@ -583,6 +592,7 @@ pub(crate) async fn spawn_session_actor(
         notifications_suppressed: false,
         rewindable: false,
         front_message_committed: false,
+        hook_block_hold: Default::default(),
         nudges_used_this_session: 0,
     });
     let mcp_strategy = startup_hints.resolve_mcp_strategy();
@@ -797,22 +807,26 @@ pub(crate) async fn spawn_session_actor(
         {
             let gc_storage = storage.clone();
             let gc_max_age = memory_config.as_ref().map_or(30, |mc| mc.gc.max_age_days);
-            tokio::task::spawn_blocking(move || match gc_storage.gc(gc_max_age) {
-                Ok(removed) if removed > 0 => {
-                    tracing::info!(
-                        target: xai_grok_telemetry::memory_log::TARGET,
-                        removed,
-                        "MEMORY_GC: cleaned orphaned workspace directories"
-                    );
+            let gc_span = region!(debug, "memory.gc", SpanParent::Root);
+            tokio::task::spawn_blocking(move || {
+                let _gc_span = gc_span;
+                match gc_storage.gc(gc_max_age) {
+                    Ok(removed) if removed > 0 => {
+                        tracing::info!(
+                            target: xai_grok_telemetry::memory_log::TARGET,
+                            removed,
+                            "MEMORY_GC: cleaned orphaned workspace directories"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::debug!(
+                            target: xai_grok_telemetry::memory_log::TARGET,
+                            error = %e,
+                            "MEMORY_GC: failed"
+                        );
+                    }
+                    _ => {}
                 }
-                Err(e) => {
-                    tracing::debug!(
-                        target: xai_grok_telemetry::memory_log::TARGET,
-                        error = %e,
-                        "MEMORY_GC: failed"
-                    );
-                }
-                _ => {}
             });
         }
         let watcher_config = memory_config
@@ -967,6 +981,7 @@ pub(crate) async fn spawn_session_actor(
         app_builder_deployer_config: app_builder_deployer_config.clone(),
         media_gen_batch_limits,
         write_file_enabled,
+        active_agent_messages_enabled,
         subagents_enabled,
         subagent_toggle: subagent_toggle.clone(),
         background_workflows_enabled,
@@ -985,6 +1000,7 @@ pub(crate) async fn spawn_session_actor(
         attribution_callback: attribution_callback_for_spec,
         tool_params_json: tool_params_json.clone(),
         subagent_event_tx: tool_context.subagent_event_tx.clone(),
+        subagent_coordinator_sender: tool_context.subagent_coordinator_sender.clone(),
         monitor_event_buffer: tool_context.monitor_event_buffer.clone(),
         user_question_tx: user_question_tx.clone(),
         subagent_depth: tool_context.subagent_depth,
@@ -1005,7 +1021,11 @@ pub(crate) async fn spawn_session_actor(
             None
         },
     });
+    use xai_grok_telemetry::subagent_spawn::SubagentSpawnPhase;
     let builder_started_at = std::time::Instant::now();
+    let agent_build_span = spawn_ctx
+        .as_ref()
+        .map(|ctx| phase_region_under(SubagentSpawnPhase::AgentBuild, &ctx.parent));
     let (agent, agent_build_elapsed) = rebuild_spec
         .build_agent_with_initial_overrides(
             agent_definition,
@@ -1024,6 +1044,10 @@ pub(crate) async fn spawn_session_actor(
             );
             e
         })?;
+    drop(agent_build_span);
+    let tool_setup_span = spawn_ctx
+        .as_ref()
+        .map(|ctx| phase_region_under(SubagentSpawnPhase::ToolSetup, &ctx.parent));
     let reservations_for_bridge = task_completion_reservations.clone();
     agent
         .tool_bridge()
@@ -1084,11 +1108,17 @@ pub(crate) async fn spawn_session_actor(
     let resolved_read =
         xai_grok_tools::reminders::task_completion::resolve_read_tool_name(agent.tool_bridge())
             .await;
+    let resolved_scheduler_delete =
+        xai_grok_tools::reminders::task_completion::resolve_scheduler_delete_tool_name(
+            agent.tool_bridge(),
+        )
+        .await;
     let _ = task_output_tool_name.set(resolved_task_output.clone());
     let _ = read_tool_name.set(resolved_read);
     tool_context.task_output_tool_name = resolved_task_output.unwrap_or_else(|| {
         xai_grok_tools::reminders::task_completion::DEFAULT_TASK_OUTPUT_TOOL.to_string()
     });
+    tool_context.scheduler_delete_tool_name = resolved_scheduler_delete;
     let scheduler_handle_for_handle = {
         let toolset = agent.tool_bridge().toolset();
         let res = toolset.resources.lock().await;
@@ -1104,16 +1134,17 @@ pub(crate) async fn spawn_session_actor(
     ) {
         tracing::warn!(error = %e, "failed to bind local session toolset");
     }
-    if let Some(ref timer) = spawn_timer {
-        use xai_grok_telemetry::subagent_spawn::SubagentSpawnPhase;
-        timer.record(SubagentSpawnPhase::AgentBuild, agent_build_elapsed);
-        timer.record(
+    if let Some(ctx) = &spawn_ctx {
+        ctx.timer
+            .record(SubagentSpawnPhase::AgentBuild, agent_build_elapsed);
+        ctx.timer.record(
             SubagentSpawnPhase::ToolSetup,
             builder_started_at
                 .elapsed()
                 .saturating_sub(agent_build_elapsed),
         );
     }
+    drop(tool_setup_span);
     crate::waterfall::mark(&wf_sid, crate::waterfall::stage::SB_AGENT_BUILT);
     let system_prompt = agent.system_prompt().to_string();
     let mut prompt_context = agent.prompt_context().clone();
@@ -1580,6 +1611,14 @@ pub(crate) async fn spawn_session_actor(
     let session = Arc::new_cyclic(|weak: &std::sync::Weak<SessionActor>| SessionActor {
         status_wake: Default::default(),
         session_info: session_info.clone(),
+        transient_retry_enabled: !startup_hints.is_subagent
+            && crate::util::config::resolve_turn_transient_retry(
+                remote_settings
+                    .as_ref()
+                    .and_then(|r| r.turn_transient_retry),
+            ),
+        transient_retries_prompt_total: std::cell::Cell::new(0),
+        transient_episode_start: std::cell::Cell::new(None),
         auth_method_id,
         model_auth_memo: std::cell::RefCell::new(None),
         attribution_callback,
@@ -1801,8 +1840,9 @@ pub(crate) async fn spawn_session_actor(
         next_title_refresh_idx: std::cell::Cell::new(initial_title_refresh_idx),
         session_turn_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         streaming_turn_capture: parking_lot::Mutex::new(StreamingTurnCapture::default()),
-        turn_stream_drained: parking_lot::Mutex::new(None),
-        pending_image_strip: parking_lot::Mutex::new(None),
+        turn_stream_drained: parking_lot::Mutex::new(std::collections::HashMap::new()),
+        pending_image_strip: parking_lot::Mutex::new(std::collections::HashMap::new()),
+        image_strip_rewrite_barrier: ImageStripRewriteBarrier::new(),
         sampler_handle,
         sampling_gate,
         rebuild_spec: rebuild_spec.clone(),
@@ -2214,6 +2254,7 @@ struct SessionInitResult {
 /// (`SessionHandle`, `permission_events_rx`, `system_prompt`) are sent back to the
 /// caller via a oneshot channel.
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(level = "debug", skip_all)]
 pub(crate) async fn spawn_session_on_thread(
     session_info: SessionInfo,
     gateway: GatewaySender,
@@ -2286,6 +2327,7 @@ pub(crate) async fn spawn_session_on_thread(
     video_gen_config: xai_grok_tools::implementations::grok_build::video_gen::VideoGenConfig,
     app_builder_deployer_config: xai_grok_tools::implementations::grok_build::app_builder::AppBuilderDeployerConfig,
     write_file_enabled: bool,
+    active_agent_messages_enabled: bool,
     goal_enabled: bool,
     background_workflows_enabled: bool,
     subagents_enabled: bool,
@@ -2327,7 +2369,7 @@ pub(crate) async fn spawn_session_on_thread(
     max_turns: Option<usize>,
     forked_tool_override: Option<Vec<ToolSpec>>,
     is_chat_kind: bool,
-    spawn_timer: Option<xai_grok_telemetry::subagent_spawn::SharedSubagentSpawnTimer>,
+    spawn_ctx: Option<xai_grok_telemetry::subagent_spawn::SpawnPhaseContext>,
     sampling_gate: Option<Arc<tokio::sync::Semaphore>>,
 ) -> Result<
     (
@@ -2465,6 +2507,7 @@ pub(crate) async fn spawn_session_on_thread(
                         video_gen_config,
                         app_builder_deployer_config,
                         write_file_enabled,
+                        active_agent_messages_enabled,
                         goal_enabled,
                         background_workflows_enabled,
                         subagents_enabled,
@@ -2501,7 +2544,7 @@ pub(crate) async fn spawn_session_on_thread(
                         max_turns,
                         forked_tool_override,
                         is_chat_kind,
-                        spawn_timer,
+                        spawn_ctx,
                         sampling_gate,
                     )
                     .await
@@ -2578,6 +2621,7 @@ impl SessionRestartActions {
 }
 #[async_trait::async_trait(?Send)]
 impl crate::session::mcp_restart::RestartActions for SessionRestartActions {
+    #[tracing::instrument(level = "debug", skip_all)]
     async fn is_stdio_server_configured(&self, server: &str) -> bool {
         self.session.is_stdio_server_configured(server).await
     }
@@ -2587,12 +2631,15 @@ impl crate::session::mcp_restart::RestartActions for SessionRestartActions {
             .unwrap_or_else(|e| e.into_inner())
             .is_shutting_down(server)
     }
+    #[tracing::instrument(level = "debug", skip_all)]
     async fn respawn_stdio(&self, server: &str) -> Result<(), String> {
         self.session.respawn_stdio(server).await
     }
+    #[tracing::instrument(level = "debug", skip_all)]
     async fn is_http_server_configured(&self, server: &str) -> bool {
         self.session.is_http_server_configured(server).await
     }
+    #[tracing::instrument(level = "debug", skip_all)]
     async fn reset_http_client(&self, server: &str) -> Result<(), String> {
         self.session.reset_http_client(server).await
     }

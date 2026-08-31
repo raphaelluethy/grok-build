@@ -112,6 +112,9 @@ async fn persist_ack_waits_for_disk_flush_before_success() {
                 tokio_util::sync::CancellationToken::new(),
             );
             let actor = Arc::new(SessionActor {
+                transient_retry_enabled: true,
+                transient_retries_prompt_total: std::cell::Cell::new(0),
+                transient_episode_start: std::cell::Cell::new(None),
                 status_wake: Default::default(),
                 session_info,
                 auth_method_id: test_auth_method_id("test-auth"),
@@ -127,6 +130,7 @@ async fn persist_ack_waits_for_disk_flush_before_success() {
                     notifications_suppressed: false,
                     rewindable: false,
                     front_message_committed: false,
+                    hook_block_hold: Default::default(),
                     nudges_used_this_session: 0,
                 }),
                 notifications: NotificationSender {
@@ -310,8 +314,9 @@ async fn persist_ack_waits_for_disk_flush_before_success() {
                 title_refresh_enabled: false,
                 session_turn_active: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 streaming_turn_capture: parking_lot::Mutex::new(StreamingTurnCapture::default()),
-                turn_stream_drained: parking_lot::Mutex::new(None),
-                pending_image_strip: parking_lot::Mutex::new(None),
+                turn_stream_drained: parking_lot::Mutex::new(std::collections::HashMap::new()),
+                pending_image_strip: parking_lot::Mutex::new(std::collections::HashMap::new()),
+                image_strip_rewrite_barrier: ImageStripRewriteBarrier::new(),
                 sampler_handle: xai_grok_sampler::SamplerHandle::noop(),
                 sampling_gate: None,
                 rebuild_spec: crate::session::agent_rebuild::test_rebuild_spec_default(),
@@ -362,6 +367,82 @@ async fn persist_ack_waits_for_disk_flush_before_success() {
                 "loaded chat history should contain the just-persisted prompt"
             );
             let _ = prompt_task.await.expect("prompt task should complete");
+        })
+        .await;
+}
+#[tokio::test(flavor = "current_thread")]
+async fn plain_user_prompt_without_persist_ack_still_sends_flush_barrier_behind_its_echo() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (gateway_tx, _gateway_rx) =
+                tokio::sync::mpsc::unbounded_channel::<xai_acp_lib::AcpClientMessage>();
+            let (persistence_tx, mut persistence_rx) =
+                tokio::sync::mpsc::unbounded_channel::<PersistenceMsg>();
+            let observed = std::rc::Rc::new(std::cell::RefCell::new(Vec::<&'static str>::new()));
+            let recorder = observed.clone();
+            tokio::task::spawn_local(async move {
+                while let Some(msg) = persistence_rx.recv().await {
+                    match msg {
+                        PersistenceMsg::FlushAndAck { respond_to } => {
+                            recorder.borrow_mut().push("flush_and_ack");
+                            let _ = respond_to.send(Ok(()));
+                        }
+                        PersistenceMsg::Update(crate::session::storage::SessionUpdate::Acp(n))
+                            if matches!(n.update, acp::SessionUpdate::UserMessageChunk(_)) =>
+                        {
+                            recorder.borrow_mut().push("user_message_chunk");
+                        }
+                        _ => {}
+                    }
+                }
+            });
+            let actor = std::sync::Arc::new(
+                create_test_actor(0, 256_000, 85, gateway_tx, persistence_tx).await,
+            );
+            let actor_for_prompt = actor.clone();
+            let turn = tokio::task::spawn_local(async move {
+                actor_for_prompt
+                    .handle_prompt(
+                        "plain-user-prompt",
+                        vec![acp::ContentBlock::Text(acp::TextContent::new("hello"))],
+                        PromptMode::Agent,
+                        None,
+                        None,
+                        None,
+                        None,
+                        true,
+                        false,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await
+            });
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    if observed.borrow().contains(&"flush_and_ack") {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("a plain user prompt (no persist_ack) must send a FlushAndAck barrier");
+            turn.abort();
+            let observed = observed.borrow();
+            let echo_index = observed
+                .iter()
+                .position(|kind| *kind == "user_message_chunk")
+                .expect("the prompt's UserMessageChunk echo must reach persistence");
+            let barrier_index = observed
+                .iter()
+                .position(|kind| *kind == "flush_and_ack")
+                .expect("barrier observed above");
+            assert!(
+                echo_index < barrier_index,
+                "the flush barrier must land FIFO-behind the prompt's persisted echo"
+            );
         })
         .await;
 }
@@ -606,6 +687,9 @@ async fn first_turn_memory_injection_disabled_does_not_persist_to_chat_history()
             };
             let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel::<SessionEvent>();
             let actor = Arc::new(SessionActor {
+                transient_retry_enabled: true,
+                transient_retries_prompt_total: std::cell::Cell::new(0),
+                transient_episode_start: std::cell::Cell::new(None),
                 status_wake: Default::default(),
                 session_info: session_info.clone(),
                 auth_method_id: test_auth_method_id("test-auth"),
@@ -621,6 +705,7 @@ async fn first_turn_memory_injection_disabled_does_not_persist_to_chat_history()
                     notifications_suppressed: false,
                     rewindable: false,
                     front_message_committed: false,
+                    hook_block_hold: Default::default(),
                     nudges_used_this_session: 0,
                 }),
                 notifications: NotificationSender {
@@ -807,8 +892,9 @@ async fn first_turn_memory_injection_disabled_does_not_persist_to_chat_history()
                 title_refresh_enabled: false,
                 session_turn_active: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 streaming_turn_capture: parking_lot::Mutex::new(StreamingTurnCapture::default()),
-                turn_stream_drained: parking_lot::Mutex::new(None),
-                pending_image_strip: parking_lot::Mutex::new(None),
+                turn_stream_drained: parking_lot::Mutex::new(std::collections::HashMap::new()),
+                pending_image_strip: parking_lot::Mutex::new(std::collections::HashMap::new()),
+                image_strip_rewrite_barrier: ImageStripRewriteBarrier::new(),
                 sampler_handle: xai_grok_sampler::SamplerHandle::noop(),
                 sampling_gate: None,
                 rebuild_spec: crate::session::agent_rebuild::test_rebuild_spec_default(),
@@ -896,6 +982,7 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
                 notifications_suppressed: false,
                 rewindable: false,
                 front_message_committed: false,
+                hook_block_hold: Default::default(),
                 nudges_used_this_session: 0,
             });
             let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel::<
@@ -911,6 +998,9 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
                 )
                 .await;
             let actor = SessionActor {
+                transient_retry_enabled: true,
+                transient_retries_prompt_total: std::cell::Cell::new(0),
+                transient_episode_start: std::cell::Cell::new(None),
                 status_wake: Default::default(),
                 session_info: SessionInfo {
                     id: acp::SessionId::new("test-cancel"),
@@ -1132,8 +1222,13 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
                 streaming_turn_capture: parking_lot::Mutex::new(
                     StreamingTurnCapture::default(),
                 ),
-                turn_stream_drained: parking_lot::Mutex::new(None),
-                pending_image_strip: parking_lot::Mutex::new(None),
+                turn_stream_drained: parking_lot::Mutex::new(
+                    std::collections::HashMap::new(),
+                ),
+                pending_image_strip: parking_lot::Mutex::new(
+                    std::collections::HashMap::new(),
+                ),
+                image_strip_rewrite_barrier: ImageStripRewriteBarrier::new(),
                 sampler_handle: xai_grok_sampler::SamplerHandle::noop(),
                 sampling_gate: None,
                 rebuild_spec: crate::session::agent_rebuild::test_rebuild_spec_default(),
@@ -1149,13 +1244,16 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
             let bridge = actor.agent.borrow().tool_bridge().clone();
             {
                 let mut state = actor.state.lock().await;
-                state.running_task = Some(AgentTask {
-                    prompt_id: "running".into(),
-                    handle: tokio::task::spawn_local(async move {
-                            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-                        })
-                        .abort_handle(),
-                });
+                state.running_task = Some(
+                    AgentTask::new(
+                        "running",
+                        tokio::task::spawn_local(async move {
+                                tokio::time::sleep(std::time::Duration::from_secs(60))
+                                    .await;
+                            })
+                            .abort_handle(),
+                    ),
+                );
                 state
                     .pending_inputs
                     .push_back(InputItem {
@@ -1176,9 +1274,11 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
                         respond_to: tx,
                         persist_ack: None,
                         parsed_prompt_tx: None,
+                        initial_child_prompt_ready: None,
                         queue_meta: None,
                         queue_mutation_policy: QueueMutationPolicy::hidden(),
                         send_now: false,
+                        traceparent: None,
                     });
             }
             let _ = actor
@@ -1248,13 +1348,39 @@ async fn cancel_records_mid_turn_abort_interrupt_marker() {
                 .expect("current_prompt_id mutex poisoned") = Some("running".to_string());
             {
                 let mut state = actor.state.lock().await;
-                state.running_task = Some(AgentTask {
-                    prompt_id: "running".into(),
-                    handle: tokio::task::spawn_local(async {
+                state.running_task = Some(AgentTask::new(
+                    "running",
+                    tokio::task::spawn_local(async {
                         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                     })
                     .abort_handle(),
-                });
+                ));
+            }
+            let cancelled_strip = xai_grok_sampler::RequestId::from("cancelled-strip");
+            let timed_out_strip = xai_grok_sampler::RequestId::from("older-timeout-strip");
+            let (stream_tx, _stream_rx) = tokio::sync::oneshot::channel();
+            actor
+                .turn_stream_drained
+                .lock()
+                .insert(cancelled_strip.clone(), Some(stream_tx));
+            {
+                let mut pending = actor.pending_image_strip.lock();
+                pending.insert(
+                    cancelled_strip.clone(),
+                    PendingImageStrip {
+                        urls: vec![std::sync::Arc::from("data:image/png;base64,cancelled")],
+                        timed_out: false,
+                        applying: false,
+                    },
+                );
+                pending.insert(
+                    timed_out_strip.clone(),
+                    PendingImageStrip {
+                        urls: vec![std::sync::Arc::from("data:image/png;base64,timed-out")],
+                        timed_out: true,
+                        applying: false,
+                    },
+                );
             }
             assert_eq!(actor.events.take_prior_interrupt_category(), None);
             let _ = actor
@@ -1271,6 +1397,22 @@ async fn cancel_records_mid_turn_abort_interrupt_marker() {
                 "cancel must record a MidTurnAbort interrupt marker"
             );
             assert_eq!(actor.events.take_prior_interrupt_category(), None);
+            assert!(
+                !actor
+                    .turn_stream_drained
+                    .lock()
+                    .contains_key(&cancelled_strip),
+                "cancel must revoke normal stream ownership"
+            );
+            let pending = actor.pending_image_strip.lock();
+            assert!(
+                !pending.contains_key(&cancelled_strip),
+                "cancel must drop its turn's deferred image-strip state"
+            );
+            assert!(
+                pending.contains_key(&timed_out_strip),
+                "cancel must preserve timeout-owned work from an older turn"
+            );
         })
         .await;
 }
@@ -1291,13 +1433,13 @@ async fn cancel_without_assistant_text_skips_interrupt_reminder() {
                 .expect("current_prompt_id mutex poisoned") = Some("running".to_string());
             {
                 let mut state = actor.state.lock().await;
-                state.running_task = Some(AgentTask {
-                    prompt_id: "running".into(),
-                    handle: tokio::task::spawn_local(async {
+                state.running_task = Some(AgentTask::new(
+                    "running",
+                    tokio::task::spawn_local(async {
                         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                     })
                     .abort_handle(),
-                });
+                ));
             }
             assert!(!actor.events.has_active_tool());
             assert!(!actor.events.take_pending_interrupt_reminder());
@@ -1337,13 +1479,13 @@ async fn send_now_cancel_arms_no_interrupt_signals_and_resets_wait_depth() {
                 .expect("current_prompt_id mutex poisoned") = Some("running".to_string());
             {
                 let mut state = actor.state.lock().await;
-                state.running_task = Some(AgentTask {
-                    prompt_id: "running".into(),
-                    handle: tokio::task::spawn_local(async {
+                state.running_task = Some(AgentTask::new(
+                    "running",
+                    tokio::task::spawn_local(async {
                         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                     })
                     .abort_handle(),
-                });
+                ));
             }
             let zombie_guard = crate::tools::tool_context::BlockingWaitGuard::enter(
                 actor.tool_context.blocking_wait_depth.clone(),
@@ -1401,13 +1543,13 @@ async fn cancel_with_dangling_tool_call_skips_interrupt_reminder() {
                 .expect("current_prompt_id mutex poisoned") = Some("running".to_string());
             {
                 let mut state = actor.state.lock().await;
-                state.running_task = Some(AgentTask {
-                    prompt_id: "running".into(),
-                    handle: tokio::task::spawn_local(async {
+                state.running_task = Some(AgentTask::new(
+                    "running",
+                    tokio::task::spawn_local(async {
                         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                     })
                     .abort_handle(),
-                });
+                ));
             }
             assert!(!actor.events.has_active_tool());
             let _ = actor
@@ -1694,6 +1836,7 @@ async fn cancel_running_task_interactive_preserves_queued_work() {
             respond_to,
             persist_ack: None,
             parsed_prompt_tx: None,
+            initial_child_prompt_ready: None,
             queue_meta: Some(crate::session::prompt_queue::QueueEntryMeta {
                 id: queue_id.to_string(),
                 version: 0,
@@ -1705,6 +1848,7 @@ async fn cancel_running_task_interactive_preserves_queued_work() {
             }),
             queue_mutation_policy: QueueMutationPolicy::editable(),
             send_now: false,
+            traceparent: None,
         };
         (item, rx)
     }
@@ -1725,13 +1869,13 @@ async fn cancel_running_task_interactive_preserves_queued_work() {
             let (q2_item, mut q2_rx) = make_item("q2-pid", "q2");
             {
                 let mut state = actor.state.lock().await;
-                state.running_task = Some(AgentTask {
-                    prompt_id: "running".into(),
-                    handle: tokio::task::spawn_local(async move {
+                state.running_task = Some(AgentTask::new(
+                    "running",
+                    tokio::task::spawn_local(async move {
                         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                     })
                     .abort_handle(),
-                });
+                ));
                 state.pending_inputs.push_back(running_item);
                 state.pending_inputs.push_back(q1_item);
                 state.pending_inputs.push_back(q2_item);
@@ -2076,7 +2220,7 @@ async fn assert_stop_trigger_arms_wake_barrier(trigger: &str) {
                 .barrier;
             assert_eq!(
                 barrier,
-                super::tasks_cancel::WakeBarrier::Armed,
+                super::cancel::WakeBarrier::Armed,
                 "{trigger}: outcome must report the armed barrier"
             );
             assert!(
@@ -2194,7 +2338,7 @@ async fn non_stop_cancels_preserve_queued_task_wakes_and_do_not_arm_barrier() {
                     .barrier;
                 assert_eq!(
                     barrier,
-                    super::tasks_cancel::WakeBarrier::Clear,
+                    super::cancel::WakeBarrier::Clear,
                     "non-stop cancel {trigger:?} must report an unarmed barrier"
                 );
                 let state = actor.state.lock().await;
@@ -2253,6 +2397,7 @@ async fn cancel_resolves_front_when_running_task_is_none() {
             respond_to,
             persist_ack: None,
             parsed_prompt_tx: None,
+            initial_child_prompt_ready: None,
             queue_meta: queue_id.map(|id| crate::session::prompt_queue::QueueEntryMeta {
                 id: id.to_string(),
                 version: 0,
@@ -2264,6 +2409,7 @@ async fn cancel_resolves_front_when_running_task_is_none() {
             }),
             queue_mutation_policy: QueueMutationPolicy::editable(),
             send_now: false,
+            traceparent: None,
         };
         (item, rx)
     }
@@ -2441,6 +2587,7 @@ async fn cancel_propagates_to_sampler_handle_so_no_further_emission() {
                 notifications_suppressed: false,
                 rewindable: false,
                 front_message_committed: false,
+                hook_block_hold: Default::default(),
                 nudges_used_this_session: 0,
             });
             let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel::<
@@ -2456,6 +2603,9 @@ async fn cancel_propagates_to_sampler_handle_so_no_further_emission() {
                 )
                 .await;
             let actor = SessionActor {
+                transient_retry_enabled: true,
+                transient_retries_prompt_total: std::cell::Cell::new(0),
+                transient_episode_start: std::cell::Cell::new(None),
                 status_wake: Default::default(),
                 session_info: SessionInfo {
                     id: acp::SessionId::new("test-cancel-sampler"),
@@ -2677,8 +2827,13 @@ async fn cancel_propagates_to_sampler_handle_so_no_further_emission() {
                 streaming_turn_capture: parking_lot::Mutex::new(
                     StreamingTurnCapture::default(),
                 ),
-                turn_stream_drained: parking_lot::Mutex::new(None),
-                pending_image_strip: parking_lot::Mutex::new(None),
+                turn_stream_drained: parking_lot::Mutex::new(
+                    std::collections::HashMap::new(),
+                ),
+                pending_image_strip: parking_lot::Mutex::new(
+                    std::collections::HashMap::new(),
+                ),
+                image_strip_rewrite_barrier: ImageStripRewriteBarrier::new(),
                 sampler_handle: sampler_handle.clone(),
                 sampling_gate: None,
                 rebuild_spec: crate::session::agent_rebuild::test_rebuild_spec_default(),
@@ -2719,10 +2874,9 @@ async fn cancel_propagates_to_sampler_handle_so_no_further_emission() {
             }
             {
                 let mut state = actor.state.lock().await;
-                state.running_task = Some(AgentTask {
-                    prompt_id: "running".into(),
-                    handle: task.abort_handle(),
-                });
+                state.running_task = Some(
+                    AgentTask::new("running", task.abort_handle()),
+                );
             }
             let _ = actor
                 .cancel_running_task(crate::session::CancelOptions {
@@ -2842,6 +2996,7 @@ async fn cancel_keeps_remaining_queued_prompts_visible_to_clients() {
             respond_to,
             persist_ack: None,
             parsed_prompt_tx: None,
+            initial_child_prompt_ready: None,
             queue_meta: Some(crate::session::prompt_queue::QueueEntryMeta {
                 id: queue_id.to_string(),
                 version: 0,
@@ -2853,6 +3008,7 @@ async fn cancel_keeps_remaining_queued_prompts_visible_to_clients() {
             }),
             queue_mutation_policy: QueueMutationPolicy::editable(),
             send_now: false,
+            traceparent: None,
         }
     }
     let local = tokio::task::LocalSet::new();
@@ -2869,13 +3025,13 @@ async fn cancel_keeps_remaining_queued_prompts_visible_to_clients() {
                 .expect("current_prompt_id mutex poisoned") = Some("running".to_string());
             {
                 let mut state = actor.state.lock().await;
-                state.running_task = Some(AgentTask {
-                    prompt_id: "running".into(),
-                    handle: tokio::task::spawn_local(async move {
+                state.running_task = Some(AgentTask::new(
+                    "running",
+                    tokio::task::spawn_local(async move {
                         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                     })
                     .abort_handle(),
-                });
+                ));
                 state
                     .pending_inputs
                     .push_back(make_item("running", "running"));
