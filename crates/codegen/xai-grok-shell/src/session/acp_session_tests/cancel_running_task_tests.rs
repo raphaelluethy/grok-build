@@ -127,6 +127,7 @@ async fn persist_ack_waits_for_disk_flush_before_success() {
                 state: TokioMutex::new(State {
                     running_task: None,
                     finalization_gate: Default::default(),
+                    message_delivery: Default::default(),
                     pending_inputs: VecDeque::new(),
                     edit_holds: HashMap::new(),
                     pending_notifications: Vec::new(),
@@ -152,6 +153,7 @@ async fn persist_ack_waits_for_disk_flush_before_success() {
                 chat_state_handle,
                 unattributed_background_usage: std::sync::atomic::AtomicBool::new(false),
                 current_prompt_id: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                active_work: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
                 pending_interactions: std::sync::Arc::new(std::sync::Mutex::new(
                     std::collections::HashMap::new(),
                 )),
@@ -201,6 +203,7 @@ async fn persist_ack_waits_for_disk_flush_before_success() {
                     injection_count: std::sync::atomic::AtomicU64::new(0),
                     compaction_recovery_count: std::sync::atomic::AtomicU64::new(0),
                     chunks_added: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+                    init_reindex_handle: std::cell::RefCell::new(None),
                     dream_config: Default::default(),
                     dream_count: std::sync::atomic::AtomicU64::new(0),
                     dream_success_count: std::sync::atomic::AtomicU64::new(0),
@@ -263,6 +266,7 @@ async fn persist_ack_waits_for_disk_flush_before_success() {
                 goal_classifier_enabled: false,
                 goal_planner_enabled: false,
                 goal_summary_enabled: false,
+                length_salvage_remote_budget: None,
                 goal_verifier_skeptic_count: 1,
                 goal_role_models: Default::default(),
                 goal_use_current_model_only: false,
@@ -705,6 +709,7 @@ async fn first_turn_memory_injection_disabled_does_not_persist_to_chat_history()
                 state: TokioMutex::new(State {
                     running_task: None,
                     finalization_gate: Default::default(),
+                    message_delivery: Default::default(),
                     pending_inputs: VecDeque::new(),
                     edit_holds: HashMap::new(),
                     pending_notifications: Vec::new(),
@@ -730,6 +735,7 @@ async fn first_turn_memory_injection_disabled_does_not_persist_to_chat_history()
                 chat_state_handle,
                 unattributed_background_usage: std::sync::atomic::AtomicBool::new(false),
                 current_prompt_id: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                active_work: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
                 pending_interactions: std::sync::Arc::new(std::sync::Mutex::new(
                     std::collections::HashMap::new(),
                 )),
@@ -782,6 +788,7 @@ async fn first_turn_memory_injection_disabled_does_not_persist_to_chat_history()
                     injection_count: std::sync::atomic::AtomicU64::new(0),
                     compaction_recovery_count: std::sync::atomic::AtomicU64::new(0),
                     chunks_added: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+                    init_reindex_handle: std::cell::RefCell::new(None),
                     dream_config: Default::default(),
                     dream_count: std::sync::atomic::AtomicU64::new(0),
                     dream_success_count: std::sync::atomic::AtomicU64::new(0),
@@ -844,6 +851,7 @@ async fn first_turn_memory_injection_disabled_does_not_persist_to_chat_history()
                 goal_classifier_enabled: false,
                 goal_planner_enabled: false,
                 goal_summary_enabled: false,
+                length_salvage_remote_budget: None,
                 goal_verifier_skeptic_count: 1,
                 goal_role_models: Default::default(),
                 goal_use_current_model_only: false,
@@ -988,6 +996,7 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
             let state = TokioMutex::new(State {
                 running_task: None,
                 finalization_gate: Default::default(),
+                message_delivery: Default::default(),
                 pending_inputs: VecDeque::new(),
                 edit_holds: HashMap::new(),
                 pending_notifications: Vec::new(),
@@ -1045,6 +1054,7 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
                 current_prompt_id: std::sync::Arc::new(
                     std::sync::Mutex::new(Some("running".to_string())),
                 ),
+                active_work: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
                 pending_interactions: std::sync::Arc::new(
                     std::sync::Mutex::new(std::collections::HashMap::new()),
                 ),
@@ -1102,6 +1112,7 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
                     chunks_added: std::sync::Arc::new(
                         std::sync::atomic::AtomicU64::new(0),
                     ),
+                    init_reindex_handle: std::cell::RefCell::new(None),
                     dream_config: Default::default(),
                     dream_count: std::sync::atomic::AtomicU64::new(0),
                     dream_success_count: std::sync::atomic::AtomicU64::new(0),
@@ -1172,6 +1183,7 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
                 goal_classifier_enabled: false,
                 goal_planner_enabled: false,
                 goal_summary_enabled: false,
+                length_salvage_remote_budget: None,
                 goal_verifier_skeptic_count: 1,
                 goal_role_models: Default::default(),
                 goal_use_current_model_only: false,
@@ -2578,6 +2590,7 @@ async fn cancel_propagates_to_sampler_handle_so_no_further_emission() {
             let state = TokioMutex::new(State {
                 running_task: None,
                 finalization_gate: Default::default(),
+                message_delivery: Default::default(),
                 pending_inputs: VecDeque::new(),
                 edit_holds: HashMap::new(),
                 pending_notifications: Vec::new(),
@@ -2635,6 +2648,7 @@ async fn cancel_propagates_to_sampler_handle_so_no_further_emission() {
                 current_prompt_id: std::sync::Arc::new(
                     std::sync::Mutex::new(Some("running".to_string())),
                 ),
+                active_work: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
                 pending_interactions: std::sync::Arc::new(
                     std::sync::Mutex::new(std::collections::HashMap::new()),
                 ),
@@ -2692,6 +2706,7 @@ async fn cancel_propagates_to_sampler_handle_so_no_further_emission() {
                     chunks_added: std::sync::Arc::new(
                         std::sync::atomic::AtomicU64::new(0),
                     ),
+                    init_reindex_handle: std::cell::RefCell::new(None),
                     dream_config: Default::default(),
                     dream_count: std::sync::atomic::AtomicU64::new(0),
                     dream_success_count: std::sync::atomic::AtomicU64::new(0),
@@ -2762,6 +2777,7 @@ async fn cancel_propagates_to_sampler_handle_so_no_further_emission() {
                 goal_classifier_enabled: false,
                 goal_planner_enabled: false,
                 goal_summary_enabled: false,
+                length_salvage_remote_budget: None,
                 goal_verifier_skeptic_count: 1,
                 goal_role_models: Default::default(),
                 goal_use_current_model_only: false,
