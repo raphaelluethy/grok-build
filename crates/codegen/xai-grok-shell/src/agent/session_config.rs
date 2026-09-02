@@ -4,9 +4,17 @@ use xai_grok_sampling_types::{ReasoningEffort, ReasoningEffortOption};
 
 use crate::session::unified_list::SessionKind;
 
-pub(crate) const ACP_CONFIG_ID_MODEL: &str = "model";
-pub(crate) const ACP_CONFIG_ID_THOUGHT_LEVEL: &str = "thought_level";
-pub(crate) const ACP_CONFIG_ID_FAST_MODE: &str = "fast_mode";
+pub(crate) const SELECTABLE_REASONING_EFFORTS: [ReasoningEffort; 5] = [
+    ReasoningEffort::Minimal,
+    ReasoningEffort::Low,
+    ReasoningEffort::Medium,
+    ReasoningEffort::High,
+    ReasoningEffort::Xhigh,
+];
+
+pub(crate) const CONFIG_ID_MODEL: &str = "model";
+pub(crate) const CONFIG_ID_REASONING_EFFORT: &str = "reasoning_effort";
+pub(crate) const CONFIG_ID_FAST_MODE: &str = "fast_mode";
 
 /// Session `_meta` / initialize `_meta` key carrying whether the client
 /// supports standard ACP boolean config options. Leader mode injects this
@@ -51,14 +59,6 @@ fn meta_boolean_config_options(meta: Option<&acp::Meta>) -> Option<bool> {
     meta.and_then(|m| m.get(BOOLEAN_CONFIG_OPTIONS_META_KEY))
         .and_then(|v| v.as_bool())
 }
-
-pub(crate) const SELECTABLE_REASONING_EFFORTS: [ReasoningEffort; 5] = [
-    ReasoningEffort::Minimal,
-    ReasoningEffort::Low,
-    ReasoningEffort::Medium,
-    ReasoningEffort::High,
-    ReasoningEffort::Xhigh,
-];
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -127,6 +127,14 @@ pub(crate) fn legacy_session_effort_options() -> Vec<ReasoningEffortOption> {
         .collect()
 }
 
+fn model_display_name(model: &acp::ModelInfo) -> String {
+    if model.name.is_empty() {
+        model.model_id.0.to_string()
+    } else {
+        model.name.clone()
+    }
+}
+
 pub(crate) fn build_session_config_options(
     available_models: &[acp::ModelInfo],
     current_model_id: &acp::ModelId,
@@ -136,15 +144,10 @@ pub(crate) fn build_session_config_options(
     let mut options = Vec::with_capacity(available_models.len() + effort_options.len());
 
     for model in available_models {
-        let label = if model.name.is_empty() {
-            model.model_id.0.to_string()
-        } else {
-            model.name.clone()
-        };
         options.push(SessionConfigOption {
             id: model.model_id.0.to_string(),
             category: "model".to_string(),
-            label,
+            label: model_display_name(model),
             description: None,
             selected: model.model_id == *current_model_id,
         });
@@ -158,6 +161,73 @@ pub(crate) fn build_session_config_options(
             description: effort.description.clone(),
             selected: Some(effort.value) == current_effort,
         });
+    }
+
+    options
+}
+
+pub(crate) fn build_acp_config_options(
+    available_models: &[acp::ModelInfo],
+    current_model_id: &acp::ModelId,
+    effort_options: &[ReasoningEffortOption],
+    current_effort: Option<ReasoningEffort>,
+) -> Vec<acp::SessionConfigOption> {
+    let mut options = Vec::new();
+
+    if !available_models.is_empty() {
+        let values: Vec<acp::SessionConfigSelectOption> = available_models
+            .iter()
+            .map(|model| {
+                acp::SessionConfigSelectOption::new(
+                    model.model_id.0.to_string(),
+                    model_display_name(model),
+                )
+            })
+            .collect();
+        // Keep the real model even if the catalog doesn't list it.
+        let current_value = current_model_id.0.to_string();
+        options.push(
+            acp::SessionConfigOption::select(CONFIG_ID_MODEL, "Model", current_value, values)
+                .category(acp::SessionConfigOptionCategory::Model),
+        );
+    }
+
+    if !effort_options.is_empty() {
+        // Keep the real effort even if it isn't a listed option (e.g. none/max);
+        // fall back to the model default when none is set.
+        let current_value = match current_effort {
+            Some(effort) => effort_options
+                .iter()
+                .find(|option| option.value == effort)
+                .map(|option| option.id.clone())
+                .unwrap_or_else(|| effort.as_str().to_string()),
+            None => effort_options
+                .iter()
+                .find(|option| option.default)
+                .unwrap_or(&effort_options[0])
+                .id
+                .clone(),
+        };
+        let values: Vec<acp::SessionConfigSelectOption> = effort_options
+            .iter()
+            .map(|option| {
+                let mut value =
+                    acp::SessionConfigSelectOption::new(option.id.clone(), option.label.clone());
+                if let Some(description) = &option.description {
+                    value = value.description(description.clone());
+                }
+                value
+            })
+            .collect();
+        options.push(
+            acp::SessionConfigOption::select(
+                CONFIG_ID_REASONING_EFFORT,
+                "Reasoning Effort",
+                current_value,
+                values,
+            )
+            .category(acp::SessionConfigOptionCategory::ThoughtLevel),
+        );
     }
 
     options
@@ -178,102 +248,28 @@ impl FastModeOptionInput {
     }
 }
 
-/// Standard ACP `configOptions` for session/new, session/load, session/resume,
-/// and `session/set_config_option` responses. Ordered: model, thought_level,
-/// then capability-gated fast_mode.
-pub(crate) fn build_acp_session_config_options(
-    available_models: &[acp::ModelInfo],
-    current_model_id: &acp::ModelId,
-    effort_options: &[ReasoningEffortOption],
-    current_effort: Option<ReasoningEffort>,
+/// Append capability-gated Fast Mode after upstream model/effort selectors.
+pub(crate) fn with_fast_mode_option(
+    mut options: Vec<acp::SessionConfigOption>,
     fast_mode: Option<FastModeOptionInput>,
 ) -> Vec<acp::SessionConfigOption> {
-    let mut options = Vec::with_capacity(3);
-
-    let model_select_options: Vec<acp::SessionConfigSelectOption> = available_models
-        .iter()
-        .map(|model| {
-            let name = if model.name.is_empty() {
-                model.model_id.0.to_string()
-            } else {
-                model.name.clone()
-            };
-            let mut option =
-                acp::SessionConfigSelectOption::new(model.model_id.0.to_string(), name);
-            if let Some(description) = model.description.clone() {
-                option = option.description(description);
-            }
-            option
-        })
-        .collect();
-    let current_model_value = available_models
-        .iter()
-        .find(|model| model.model_id == *current_model_id)
-        .map(|model| model.model_id.0.to_string())
-        .unwrap_or_else(|| current_model_id.0.to_string());
-    options.push(
-        acp::SessionConfigOption::select(
-            ACP_CONFIG_ID_MODEL,
-            "Model",
-            current_model_value,
-            model_select_options,
-        )
-        .category(acp::SessionConfigOptionCategory::Model),
-    );
-
-    if !effort_options.is_empty() {
-        let thought_select_options: Vec<acp::SessionConfigSelectOption> = effort_options
-            .iter()
-            .map(|effort| {
-                let mut option =
-                    acp::SessionConfigSelectOption::new(effort.id.clone(), effort.label.clone());
-                if let Some(description) = effort.description.clone() {
-                    option = option.description(description);
-                }
-                option
-            })
-            .collect();
-        let current_thought = effort_options
-            .iter()
-            .find(|effort| Some(effort.value) == current_effort)
-            .map(|effort| effort.id.clone())
-            .or_else(|| {
-                effort_options
-                    .iter()
-                    .find(|effort| effort.default)
-                    .map(|effort| effort.id.clone())
-            })
-            .or_else(|| effort_options.first().map(|effort| effort.id.clone()))
-            .unwrap_or_else(|| current_effort.unwrap_or_default().as_str().to_string());
-        options.push(
-            acp::SessionConfigOption::select(
-                ACP_CONFIG_ID_THOUGHT_LEVEL,
-                "Thought Level",
-                current_thought,
-                thought_select_options,
-            )
-            .category(acp::SessionConfigOptionCategory::ThoughtLevel),
-        );
-    }
-
     if fast_mode.is_some_and(FastModeOptionInput::should_emit) {
         let current_value = fast_mode.map(|input| input.current_value).unwrap_or(false);
         options.push(
-            acp::SessionConfigOption::boolean(ACP_CONFIG_ID_FAST_MODE, "Fast Mode", current_value)
+            acp::SessionConfigOption::boolean(CONFIG_ID_FAST_MODE, "Fast Mode", current_value)
                 .description("Use the priority service tier for lower latency")
                 .category(acp::SessionConfigOptionCategory::Other(
                     "model_config".to_string(),
                 )),
         );
     }
-
     options
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ParsedSessionConfigSet {
     Model(acp::ModelId),
-    ThoughtLevel(ReasoningEffort),
+    ReasoningEffort(ReasoningEffort),
     FastMode(bool),
 }
 
@@ -330,13 +326,13 @@ pub(crate) fn parse_set_session_config_option(
                 return Err(invalid_config_params("unknown option value"));
             }
             match config_id {
-                ACP_CONFIG_ID_MODEL => Ok(ParsedSessionConfigSet::Model(acp::ModelId::new(
+                CONFIG_ID_MODEL => Ok(ParsedSessionConfigSet::Model(acp::ModelId::new(
                     value_id.0.clone(),
                 ))),
-                ACP_CONFIG_ID_THOUGHT_LEVEL => {
+                CONFIG_ID_REASONING_EFFORT => {
                     let effort = effort_for_config_value(value_id.0.as_ref(), effort_options)
                         .ok_or_else(|| invalid_config_params("unknown option value"))?;
-                    Ok(ParsedSessionConfigSet::ThoughtLevel(effort))
+                    Ok(ParsedSessionConfigSet::ReasoningEffort(effort))
                 }
                 _ => Err(invalid_config_params("unknown config id")),
             }
@@ -346,7 +342,7 @@ pub(crate) fn parse_set_session_config_option(
                 .value
                 .as_bool()
                 .ok_or_else(|| invalid_config_params("expected a boolean value"))?;
-            if config_id != ACP_CONFIG_ID_FAST_MODE {
+            if config_id != CONFIG_ID_FAST_MODE {
                 return Err(invalid_config_params("unknown config id"));
             }
             Ok(ParsedSessionConfigSet::FastMode(value))
@@ -441,6 +437,113 @@ mod tests {
         assert!(v.get("description").is_none());
     }
 
+    #[test]
+    fn grok_session_detail_serializes_camel_case() {
+        let detail = GrokSessionDetail::build(
+            "sess-1".to_string(),
+            "/Users/me/xai".to_string(),
+            "grok-build".to_string(),
+            None,
+        );
+        let v = serde_json::to_value(&detail).expect("serialize");
+        assert_eq!(v["sessionId"], "sess-1");
+        assert_eq!(v["kind"], "build");
+        assert_eq!(v["cwd"], "/Users/me/xai");
+        assert_eq!(v["currentModelId"], "grok-build");
+        assert!(v.get("title").is_none());
+    }
+
+    #[test]
+    fn acp_config_options_map_model_and_effort_selectors() {
+        let models = [
+            model("grok-build", "Grok Build"),
+            model("grok-4.5", "Grok 4.5"),
+        ];
+        let efforts = [ReasoningEffortOption {
+            id: "high".to_string(),
+            value: ReasoningEffort::High,
+            label: "High".to_string(),
+            description: None,
+            default: false,
+        }];
+
+        let options = build_acp_config_options(
+            &models,
+            &acp::ModelId::from("grok-4.5"),
+            &efforts,
+            Some(ReasoningEffort::High),
+        );
+
+        let expected = vec![
+            acp::SessionConfigOption::select(
+                CONFIG_ID_MODEL,
+                "Model",
+                "grok-4.5",
+                vec![
+                    acp::SessionConfigSelectOption::new("grok-build", "Grok Build"),
+                    acp::SessionConfigSelectOption::new("grok-4.5", "Grok 4.5"),
+                ],
+            )
+            .category(acp::SessionConfigOptionCategory::Model),
+            acp::SessionConfigOption::select(
+                CONFIG_ID_REASONING_EFFORT,
+                "Reasoning Effort",
+                "high",
+                vec![acp::SessionConfigSelectOption::new("high", "High")],
+            )
+            .category(acp::SessionConfigOptionCategory::ThoughtLevel),
+        ];
+        assert_eq!(options, expected);
+    }
+
+    #[test]
+    fn acp_config_options_effort_current_preserves_unlisted_value() {
+        let models = [model("grok-4.5", "Grok 4.5")];
+        let efforts = [ReasoningEffortOption {
+            id: "high".to_string(),
+            value: ReasoningEffort::High,
+            label: "High".to_string(),
+            description: None,
+            default: false,
+        }];
+        let options = build_acp_config_options(
+            &models,
+            &acp::ModelId::from("grok-4.5"),
+            &efforts,
+            Some(ReasoningEffort::Low),
+        );
+        let effort = options
+            .iter()
+            .find(|o| o.id.0.as_ref() == CONFIG_ID_REASONING_EFFORT)
+            .expect("effort selector present when the model supports effort");
+        match &effort.kind {
+            acp::SessionConfigKind::Select(select) => {
+                assert_eq!(select.current_value.0.as_ref(), "low");
+            }
+            _ => panic!("effort must be a select"),
+        }
+    }
+
+    #[test]
+    fn acp_config_options_model_current_preserves_unlisted_value() {
+        let models = [
+            model("grok-build", "Grok Build"),
+            model("grok-4.5", "Grok 4.5"),
+        ];
+        let options =
+            build_acp_config_options(&models, &acp::ModelId::from("stale-model"), &[], None);
+        let model = options
+            .iter()
+            .find(|o| o.id.0.as_ref() == CONFIG_ID_MODEL)
+            .expect("model selector present");
+        match &model.kind {
+            acp::SessionConfigKind::Select(select) => {
+                assert_eq!(select.current_value.0.as_ref(), "stale-model");
+            }
+            _ => panic!("model must be a select"),
+        }
+    }
+
     fn init_with_client_name(name: &str) -> acp::InitializeRequest {
         acp::InitializeRequest::new(acp::ProtocolVersion::V1)
             .client_info(acp::Implementation::new(name, "1.0.0"))
@@ -531,22 +634,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn grok_session_detail_serializes_camel_case() {
-        let detail = GrokSessionDetail::build(
-            "sess-1".to_string(),
-            "/Users/me/xai".to_string(),
-            "grok-build".to_string(),
-            None,
-        );
-        let v = serde_json::to_value(&detail).expect("serialize");
-        assert_eq!(v["sessionId"], "sess-1");
-        assert_eq!(v["kind"], "build");
-        assert_eq!(v["cwd"], "/Users/me/xai");
-        assert_eq!(v["currentModelId"], "grok-build");
-        assert!(v.get("title").is_none());
-    }
-
     fn fast_model(id: &'static str, name: &str) -> acp::ModelInfo {
         model(id, name).meta(
             serde_json::json!({ "supportsFastMode": true })
@@ -562,58 +649,10 @@ mod tests {
         current_effort: Option<ReasoningEffort>,
         fast: Option<FastModeOptionInput>,
     ) -> Vec<acp::SessionConfigOption> {
-        build_acp_session_config_options(models, current, efforts, current_effort, fast)
-    }
-
-    fn select_kind(option: &acp::SessionConfigOption) -> &acp::SessionConfigSelect {
-        match &option.kind {
-            acp::SessionConfigKind::Select(select) => select,
-            other => panic!("expected select kind, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn acp_options_are_ordered_model_then_thought_level() {
-        let models = [
-            model("grok-build", "Grok Build"),
-            model("grok-4.5", "Grok 4.5"),
-        ];
-        let current = acp::ModelId::from("grok-build");
-        let opts = acp_opts(
-            &models,
-            &current,
-            &legacy_session_effort_options(),
-            Some(ReasoningEffort::High),
-            None,
-        );
-        assert_eq!(opts.len(), 2);
-        assert_eq!(opts[0].id.0.as_ref(), ACP_CONFIG_ID_MODEL);
-        assert_eq!(
-            opts[0].category,
-            Some(acp::SessionConfigOptionCategory::Model)
-        );
-        assert_eq!(opts[1].id.0.as_ref(), ACP_CONFIG_ID_THOUGHT_LEVEL);
-        assert_eq!(
-            opts[1].category,
-            Some(acp::SessionConfigOptionCategory::ThoughtLevel)
-        );
-        let model_select = select_kind(&opts[0]);
-        assert_eq!(model_select.current_value.0.as_ref(), "grok-build");
-        let acp::SessionConfigSelectOptions::Ungrouped(model_values) = &model_select.options else {
-            panic!("expected ungrouped model options");
-        };
-        assert_eq!(model_values.len(), 2);
-        let thought = select_kind(&opts[1]);
-        assert_eq!(thought.current_value.0.as_ref(), "high");
-    }
-
-    #[test]
-    fn acp_thought_level_is_omitted_when_model_has_no_effort_options() {
-        let models = [model("grok-build", "Grok Build")];
-        let current = acp::ModelId::from("grok-build");
-        let opts = acp_opts(&models, &current, &[], None, None);
-        assert_eq!(opts.len(), 1);
-        assert_eq!(opts[0].id.0.as_ref(), ACP_CONFIG_ID_MODEL);
+        with_fast_mode_option(
+            build_acp_config_options(models, current, efforts, current_effort),
+            fast,
+        )
     }
 
     #[test]
@@ -634,7 +673,7 @@ mod tests {
         assert!(
             gated_off
                 .iter()
-                .all(|option| option.id.0.as_ref() != ACP_CONFIG_ID_FAST_MODE)
+                .all(|option| option.id.0.as_ref() != CONFIG_ID_FAST_MODE)
         );
         let not_capable = acp_opts(
             &models,
@@ -650,7 +689,7 @@ mod tests {
         assert!(
             not_capable
                 .iter()
-                .all(|option| option.id.0.as_ref() != ACP_CONFIG_ID_FAST_MODE)
+                .all(|option| option.id.0.as_ref() != CONFIG_ID_FAST_MODE)
         );
         let enabled = acp_opts(
             &models,
@@ -665,7 +704,7 @@ mod tests {
         );
         let fast = enabled
             .iter()
-            .find(|option| option.id.0.as_ref() == ACP_CONFIG_ID_FAST_MODE)
+            .find(|option| option.id.0.as_ref() == CONFIG_ID_FAST_MODE)
             .expect("fast_mode");
         match &fast.kind {
             acp::SessionConfigKind::Boolean(flag) => assert!(flag.current_value),
@@ -696,7 +735,7 @@ mod tests {
         assert_eq!(json[0]["currentValue"], "grok-build");
         assert_eq!(json[0]["options"][0]["value"], "grok-build");
         assert_eq!(json[0]["options"][0]["name"], "Grok Build");
-        assert_eq!(json[1]["id"], "thought_level");
+        assert_eq!(json[1]["id"], "reasoning_effort");
         assert_eq!(json[1]["category"], "thought_level");
         assert_eq!(json[1]["type"], "select");
         assert_eq!(json[1]["currentValue"], "high");
@@ -719,7 +758,7 @@ mod tests {
         );
         let response = acp::NewSessionResponse::new("sess-1")
             .models(Some(acp::SessionModelState::new(current, models.to_vec())))
-            .config_options(acp_opts)
+            .config_options(Some(acp_opts))
             .meta(meta);
         let json = serde_json::to_value(&response).expect("serialize");
         assert_eq!(json["sessionId"], "sess-1");
@@ -758,22 +797,25 @@ mod tests {
     }
 
     #[test]
-    fn set_config_option_accepts_model_and_thought_level_value_ids() {
+    fn set_config_option_accepts_model_effort_and_fast_mode() {
         let (offered, efforts) = offered_for_validation();
         let model_req =
-            acp::SetSessionConfigOptionRequest::new("sess", ACP_CONFIG_ID_MODEL, "grok-4.5");
+            acp::SetSessionConfigOptionRequest::new("sess", CONFIG_ID_MODEL, "grok-4.5");
         assert_eq!(
             parse_set_session_config_option(&model_req, &offered, &efforts).unwrap(),
             ParsedSessionConfigSet::Model(acp::ModelId::new("grok-4.5"))
         );
-        let effort_req =
-            acp::SetSessionConfigOptionRequest::new("sess", ACP_CONFIG_ID_THOUGHT_LEVEL, "low");
+        let effort_req = acp::SetSessionConfigOptionRequest::new(
+            "sess",
+            CONFIG_ID_REASONING_EFFORT,
+            "low",
+        );
         assert_eq!(
             parse_set_session_config_option(&effort_req, &offered, &efforts).unwrap(),
-            ParsedSessionConfigSet::ThoughtLevel(ReasoningEffort::Low)
+            ParsedSessionConfigSet::ReasoningEffort(ReasoningEffort::Low)
         );
         let fast_req =
-            acp::SetSessionConfigOptionRequest::new("sess", ACP_CONFIG_ID_FAST_MODE, true);
+            acp::SetSessionConfigOptionRequest::new("sess", CONFIG_ID_FAST_MODE, true);
         assert_eq!(
             parse_set_session_config_option(&fast_req, &offered, &efforts).unwrap(),
             ParsedSessionConfigSet::FastMode(true)
@@ -791,7 +833,7 @@ mod tests {
             acp::ErrorCode::InvalidParams
         );
         let bad_model =
-            acp::SetSessionConfigOptionRequest::new("sess", ACP_CONFIG_ID_MODEL, "not-a-model");
+            acp::SetSessionConfigOptionRequest::new("sess", CONFIG_ID_MODEL, "not-a-model");
         assert_eq!(
             parse_set_session_config_option(&bad_model, &offered, &efforts)
                 .unwrap_err()
@@ -799,7 +841,7 @@ mod tests {
             acp::ErrorCode::InvalidParams
         );
         let type_mismatch =
-            acp::SetSessionConfigOptionRequest::new("sess", ACP_CONFIG_ID_MODEL, true);
+            acp::SetSessionConfigOptionRequest::new("sess", CONFIG_ID_MODEL, true);
         assert_eq!(
             parse_set_session_config_option(&type_mismatch, &offered, &efforts)
                 .unwrap_err()
@@ -807,7 +849,7 @@ mod tests {
             acp::ErrorCode::InvalidParams
         );
         let bool_as_id =
-            acp::SetSessionConfigOptionRequest::new("sess", ACP_CONFIG_ID_FAST_MODE, "yes");
+            acp::SetSessionConfigOptionRequest::new("sess", CONFIG_ID_FAST_MODE, "yes");
         assert_eq!(
             parse_set_session_config_option(&bool_as_id, &offered, &efforts)
                 .unwrap_err()
