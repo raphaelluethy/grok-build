@@ -173,6 +173,28 @@ The agent sends push notifications to clients for real-time updates:
 
 ---
 
+## Session config options
+
+`session/new` and `session/load` responses include a typed `configOptions` list (standard ACP, not an `x.ai/` extension). Change a live option with `session/set_config_option`.
+
+| `configId` | Category | Effect |
+|------------|----------|--------|
+| `model` | `model` | Switches the session model (`allowed_models`, chat gateway routing). Value must be a string id. |
+| `reasoning_effort` | `thought_level` | Applies effort to the current model without changing the model (no prompt rewrite, no `allowed_models` gate). Value must be a string id (`minimal`, `low`, `medium`, `high`, `xhigh`). Dropped with a warning when the model does not advertise `supportsReasoningEffort`. |
+| `fast_mode` | `model_config` | Boolean Fast Mode for models that advertise `supportsFastMode`. Emitted only when the client supports standard ACP boolean config options. |
+
+```json
+{
+  "sessionId": "…",
+  "configId": "reasoning_effort",
+  "value": { "value": "high" }
+}
+```
+
+The response is the **complete, updated** option list. A `config_option_update` session notification mirrors it to every subscribed client. In leader mode the proxy snoops `configId: model` so each client's `default_model` stays in sync. Boolean `fast_mode` is emitted when both the client and the current model support it.
+
+---
+
 ## Session `_meta` options
 
 Optional fields on `session/new`:
